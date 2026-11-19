@@ -1,4 +1,4 @@
-# ObraTiempo v0.3 — Ocupación de equipos y Gantt mensual
+# ABALUM · ObraTiempo v0.4 — Ocupación de equipos y Gantt mensual
 
 Aplicación React + JavaScript + Vite para analizar la capacidad de colocación por equipo. En esta versión se prioriza **UX y simulación local**, sin grabar las nuevas estructuras de personal o planificación en Google Sheets. Se conserva el backend Apps Script (con usuario, contraseña y token de sesión) para la próxima etapa.
 
@@ -16,11 +16,11 @@ Abrir http://localhost:5173. `VITE_DEMO_MODE=true` permite probar todas las pant
 
 ### Qué información es real y qué no
 
-- **Archivo Excel 19/11/2026:** 1.963 registros de proyectos más una fila final de resumen, 28 columnas. Excluidos `Terminado` (1.828) y `Cancelado` (33): **102 proyectos activos / no cerrados** en la vista previa. Estados de las 102 obras: `Ejecucion` 43, `Aprobado` 30, `Tecnica` 12, `Solicitado` 10, `Planificacion` 4, `Planificacion C` 2 y `Pausa Cliente M` 1.
-- **Escenario UX:** las 6 estimaciones, nombres de 5 colaboradores, 2 equipos, fechas de asignación y porcentajes son **ficticios**. No son cargas confirmadas de la empresa ni deben presentarse como una proyección real para Gerencia. Sustituir antes de emitir un reporte definitivo.
+- **Archivo Excel 19/11/2026 (análisis de importación):** 1.963 registros de proyectos más una fila final de resumen, 28 columnas. Excluidos `Terminado` (1.828) y `Cancelado` (33): **102 proyectos activos / no cerrados** al importarlo. **No se incluye el Excel privado ni sus 102 registros en el bundle publicado**. Estados de las 102 obras: `Ejecucion` 43, `Aprobado` 30, `Tecnica` 12, `Solicitado` 10, `Planificacion` 4, `Planificacion C` 2 y `Pausa Cliente M` 1.
+- **Escenario UX:** las 6 obras iniciales, las estimaciones, nombres de 5 colaboradores, 2 equipos, fechas de asignación y porcentajes son **ficticios**. No son cargas confirmadas de la empresa ni deben presentarse como una proyección real para Gerencia. Sustituir antes de emitir un reporte definitivo.
 - Las estimaciones de ejemplo se identifican con `example: true` y texto `VALORES DE EJEMPLO`.
 - Los cambios de planificación (`equipos`, `colaboradores`, `ausencias`, `asignaciones`) se guardan solamente en `localStorage` bajo `obras-capacidad-ux-v3`. En demo, los tiempos y el catálogo de proyectos también son locales (`obras-tiempo-demo-v3`). Utilizar **Restablecer ejemplo** para recuperar escenario de planificación original.
-- **Atención a la privacidad:** la vista previa incluye nombres de obras y clientes provenientes del Excel suministrado. **No publiques la build demo en una URL abierta ni subas el código con esa base a un repositorio público**. Antes de desplegar, retirarla del frontend y consumir los proyectos autenticados desde Apps Script.
+- **Privacidad:** la v0.4 elimina el catálogo de obras reales del código fuente y lo sustituye por 6 obras ficticias. Para producción usá `VITE_DEMO_MODE=false` y consumí la hoja real desde Apps Script autenticado; no publiques futuras exportaciones de Excel dentro de `src/`.
 
 ## Importar archivo actualizado
 
@@ -95,8 +95,16 @@ Se verificaron en este entorno 19 pruebas de Node y la sintaxis del JSX, pero **
 - `src/lib/excelImport.js`: detección de ambos formatos de importación.
 - `src/lib/domain.js`: reglas básicas de cálculo de tiempos y calendario.
 - `src/lib/demo.js`: datos iniciales para recorrer la UX.
-- `src/data/projects-2026-11-19.json`: catálogo del Excel recibido; **uso privado de vista previa, no publicar**.
+- `src/data/demo-projects.json`: seis obras genéricas sin datos internos de clientes.
 - `src/data/scenario.js`: valores ficticios del ejemplo de dos equipos.
 - `CAMBIOS_v0.3.md`: checklist de lo nuevo y pruebas manuales recomendadas.
 - `backend/apps-script/Code.gs`: backend previo y mapeo del Excel actualizado.
 - `README_AI.md`: instrucciones para nuevas iteraciones.
+
+## Novedades v0.4: apariencia ABALUM y Vercel
+
+- Temática ABALUM: rojo de referencia `#C9233B`, grafito `#1C1E22`, superficies blancas y gris claro `#F7F7F8`. No se afirma que los códigos sean los oficiales de marca.
+- Sidebar, acceso, botones, formularios, métricas y Gantt actualizados. Colores funcionales diferenciados: verde (capacidad), ámbar (atención), rojo tramado (sobrecarga), violeta (tercerizada).
+- Se eliminaron nombres de clientes/obras reales del bundle. En la demo hay seis ejemplos, y podés cargar tu Excel para visualizarlo localmente. Los proyectos reales en producción siguen viniendo de Apps Script.
+- Ver **`README_VERCEL.md`** antes de publicar. La aplicación debe desplegarse con `VITE_DEMO_MODE=false` y `APPS_SCRIPT_URL` configurado como secreto del servidor (sin prefijo `VITE_`).
+- La planificación sigue en localStorage: todavía NO se comparte entre usuarios ni se guarda en Apps Script.

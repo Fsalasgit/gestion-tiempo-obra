@@ -1,15 +1,15 @@
 import { WEEK } from './domain.js';
-import PROJECTS from '../data/projects-2026-11-19.json';
+import PROJECTS from '../data/demo-projects.json';
 import { EXAMPLE_ESTIMATES } from '../data/scenario.js';
 
-// Solo los proyectos del Excel son reales; estimaciones, equipos y Gantt son ejemplos.
+// El bundle incluye únicamente proyectos ficticios. Los proyectos reales llegan autenticados del backend.
 export const DEMO_PROJECTS=PROJECTS;
 export const DEMO_DATA={
   projects:DEMO_PROJECTS,
   estimates:EXAMPLE_ESTIMATES,
   week:WEEK,holidays:[],recesses:[],events:[],
   users:[{username:'admin',name:'Super administrador (demo)',role:'SUPERADMIN',active:true}],
-  teamSize:3, sourceFile:'Proyectos_19-11-26 09_24_16(2).xls'
+  teamSize:3, sourceFile:'Ejemplo ficticio (sin Excel privado)'
 };
 // Sin archivo .env, arranca la vista previa. Para activar el backend usar false.
 export const isDemo=import.meta.env.VITE_DEMO_MODE!=='false';

@@ -6,3 +6,9 @@ dist/
 .DS_Store
 *.log
 .vercel/
+
+# Exportaciones privadas de obras: nunca subir a GitHub/Vercel
+*.xls
+*.xlsx
+Proyectos_*.json
+src/data/projects-*.json

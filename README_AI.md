@@ -1,4 +1,4 @@
-# README_AI · ObraTiempo v0.3
+# README_AI · ObraTiempo v0.4 (tema ABALUM)
 
 Leé este archivo antes de modificar el código. Objetivo **actual**: evaluar UX y modelo de capacidad mensual antes de persistir equipos y Gantt. Base React + Vite en JavaScript, backend Google Apps Script con Google Sheets, autenticación simple usuario/contraseña y token (no Google Login). No introducir complejidad innecesaria en el acceso.
 
@@ -7,7 +7,7 @@ Leé este archivo antes de modificar el código. Objetivo **actual**: evaluar UX
 1. `proyecto` es una **copia reemplazable del Excel de origen**, solo lectura en UI. No guardar dirección, tiempos ni anotaciones en este catálogo; se actualiza únicamente mediante upload/refresh. Nueva exportación 19/11/26 contiene 28 columnas (Numero, Estado, Nombre, Cliente, Inicio P., Inicio, Fin P., Producido, Entrega, Lider Proyecto, Localidad Proyecto). Anterior exportación tenía 48 columnas y filas por artículo, con `Project ID`, `Proyecto` y `PR - Estado`. Ambos se normalizan en `src/lib/excelImport.js` y `importSheet_` de Apps Script. Excluir solo estados globales cerrados, no inferir el cierre por `Producido` o `Entrega`. Ignorar pie de totales sin Numero+Nombre. **La actualización jamás borra o edita `tiempo_obra`.**
 2. `tiempo_obra`: un registro por `projectId`, `value`, `unit`, `crewReference` 2, `outsourced` boolean, `notes`, `address`. Día de referencia = 6 horas persona. Dejar carga y edición fuera de la hoja de origen.
 3. `equipos`, `colaboradores`, `ausencias`, `planificacion`: en v0.3 son estructuras de escenario `localStorage`, NO tablas/operaciones activas del servidor. No dar la impresión de que están persistidas online. Próxima etapa: modelar pestañas de Google Sheets, endpoints y migración aditiva, después de validar interfaz.
-4. Catálogo demo contiene 102 obras reales extraídas del Excel entregado, pero los tiempos, colaboradores, equipos y Gantt son **ficticios y señalizados**. Este catálogo es **privado, no subir a repositorios públicos ni desplegar como modo demo abierto**. En producción los proyectos se leen autenticados desde Apps Script. No asumir que los 102 proyectos tienen estimaciones.
+4. La demo incluye **6 obras ficticias y anónimas**. Los nombres e IDs privados del Excel del usuario no se incluyen en el repositorio ni en el bundle de Vercel. Los proyectos reales se consultan autenticados por Apps Script (modo producción). Un usuario puede cargar un Excel solo en su navegador al probar la UX. No volver a incorporar `src/data/projects-2026-11-19.json` u otros datos sensibles al frontend.
 
 ## Fórmulas que NO deben cambiar inadvertidamente
 
@@ -35,3 +35,11 @@ Leé este archivo antes de modificar el código. Objetivo **actual**: evaluar UX
 - Separar el equipo nominal y la cuadrilla planificada; la duración por cantidad de personas se supone proporcional SOLO como escenario inicial, no considerar productividad garantizada.
 - Mejorar posteriormente disponibilidad real por tramos horarios, ausencias parciales, supervisión, horas extra, tareas paralelas por fases, reasignaciones de una obra a varios equipos, traslados A→B→base y compromisos de entrega. No prometer fechas de entrega antes de modelar esas restricciones.
 - Mantener diseño profesional, adaptable y comprensible para Gerencia. Nombres simples, indicadores con unidades y alertas si falta información.
+
+## Identidad visual ABALUM (v0.4)
+
+- Base cromática: rojo `#C9233B`, grafito `#1C1E22`, blanco `#FFFFFF`, gris de superficie `#F7F7F8`. Son valores de interfaz aproximados, no códigos oficiales de un manual de marca.
+- Variables CSS en `src/styles.css` (`--abalum-*`). Vista del Gantt en `src/capacity.css` (`--cap-*`). Ambos archivos contienen overrides finales del tema: mantener la cascada consistente y no reintroducir azules en botones, navegación o formularios.
+- Verde = capacidad normal, ámbar = advertencia, rojo tramado = sobrecarga, violeta = trabajo tercerizado. El rojo ABALUM también se utiliza para botones primarios y obras del Gantt; el estado se distingue por tramas y texto.
+- Nombre visible: **ABALUM · ObraTiempo**, sin suplantar el logotipo corporativo real. El favicon y la marca pueden sustituirse si se facilita un archivo de logo oficial.
+- Implementación en Vercel: ver `README_VERCEL.md`. `APPS_SCRIPT_URL` solo servidor; `VITE_DEMO_MODE=false` al desplegar.

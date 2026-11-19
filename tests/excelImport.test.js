@@ -1,6 +1,6 @@
 import test from 'node:test';import assert from 'node:assert/strict';
 import {normalizeProjectRows} from '../src/lib/excelImport.js';
-import projects from '../src/data/projects-2026-11-19.json' with {type:'json'};
+import projects from '../src/data/demo-projects.json' with {type:'json'};
 test('Se reconoce la nueva cabecera de 28 columnas y se excluyen terminados',()=>{
 const x=normalizeProjectRows([
  {'Estado':'Terminado',' Numero':'PR-1',Nombre:'Finalizado',Cliente:'X'},
@@ -11,4 +11,4 @@ const x=normalizeProjectRows([
 test('Se agrupan artículos del formato anterior, sin alterar los tiempos',()=>{
  const r=normalizeProjectRows([{Numero:'PR-11',Proyecto:'Obra', 'PR - Estado':'Ejecucion','Project ID':'20'},{Numero:'PR-11',Proyecto:'Obra', 'PR - Estado':'Ejecucion','Project ID':'20'}]);assert.equal(r.projects[0].items,2);assert.equal(r.projects.length,1);
 });
-test('La exportación de noviembre analizada tiene 102 obras activas y claves únicas',()=>{assert.equal(projects.length,102);assert.equal(new Set(projects.map(p=>p.id)).size,102);assert(projects.every(p=>p.estado!=='Terminado'&&p.numero));});
+test('Los proyectos de demostración son ficticios y tienen claves únicas',()=>{assert.equal(projects.length,6);assert.equal(new Set(projects.map(p=>p.id)).size,6);assert(projects.every(p=>p.estado!=='Terminado'&&p.numero));});

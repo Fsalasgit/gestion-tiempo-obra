@@ -1,0 +1,15 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {WEEK} from '../src/lib/domain.js';
+import {buildMonthPlan,scheduleAssignment,monthDates,shiftMonth,activePeople} from '../src/lib/planner.js';
+const p=[{id:'A',numero:'PR-1',proyecto:'A'},{id:'B',numero:'PR-2',proyecto:'B'}];
+const estimates=[{projectId:'A',value:12,unit:'horas',crewReference:2},{projectId:'B',value:12,unit:'horas',crewReference:2}];
+const teams=[{id:'T',name:'Colocación'}];
+const members=[{id:'1',teamId:'T',start:'2026-01-01',active:true},{id:'2',teamId:'T',start:'2026-01-01',active:true}];
+const assignments=[{id:'1',projectId:'A',teamId:'T',start:'2026-11-19',crew:2},{id:'2',projectId:'B',teamId:'T',start:'2026-11-19',crew:2}];
+test('La asignación ocupa esfuerzo sin ocultar solapamientos',()=>{const m=buildMonthPlan({month:'2026-11',projects:p,estimates,teams,members,assignments,week:WEEK});assert.equal(m.teamDays[0].dates.find(d=>d.date==='2026-11-19').load,24);assert.equal(m.teamDays[0].dates.find(d=>d.date==='2026-11-19').capacity,12);});
+test('Baja del trabajador reduce capacidad, no demanda',()=>{const m=buildMonthPlan({month:'2026-11',projects:p,estimates,teams,members,assignments,absences:[{id:'b',memberId:'1',start:'2026-11-19',end:'2026-11-25'}],week:WEEK});const d=m.teamDays[0].dates.find(x=>x.date==='2026-11-19');assert.equal(d.capacity,6);assert.equal(d.load,24);});
+test('Una obra tercerizada libera demanda interna',()=>{const m=buildMonthPlan({month:'2026-11',projects:p,estimates:[estimates[0],{...estimates[1],outsourced:true}],teams,members,assignments,week:WEEK});assert.equal(m.teamDays[0].dates.find(d=>d.date==='2026-11-19').load,12);assert.equal(m.fullyOutsourced,1);});
+test('Una contratación temporal cuenta solo cuando corresponde',()=>{const people=[...members,{id:'3',teamId:'T',start:'2026-11-23',end:'2026-11-30',active:true}];assert.equal(activePeople('T','2026-11-19',people).length,2);assert.equal(activePeople('T','2026-11-23',people).length,3);});
+test('Feriado y jornada de viernes 5h en el Gantt',()=>{const x=scheduleAssignment(assignments[0],estimates[0],WEEK,[{date:'2026-11-19',active:true}],[]);assert.equal(x.days['2026-11-19'],undefined);assert.equal(x.days['2026-11-20'],10);});
+test('Navegación mensual y días reales de cada mes',()=>{assert.equal(shiftMonth('2026-12',1),'2027-01');assert.equal(monthDates('2027-02').length,28);});
+test('Días pendientes son claros en la fecha de consulta',()=>{const m=buildMonthPlan({month:'2026-11',projects:p,estimates,teams,members,assignments,week:WEEK,today:'2026-11-19'});assert.equal(m.calendarDaysRemaining,11);assert.equal(m.workdaysRemaining,8);});

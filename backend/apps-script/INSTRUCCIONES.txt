@@ -1,0 +1,18 @@
+ObraTiempo - actualización de Apps Script v0.3
+
+1. Abrí el mismo proyecto de Apps Script vinculado a tu Google Sheet (no crees uno nuevo).
+2. Reemplazá el contenido de Code.gs con el Code.gs de esta carpeta.
+3. En Servicios (+), incorporá Drive API, versión v3, identificador Drive.
+   Si ya figura habilitado en Servicios no lo agregues de nuevo.
+4. Guardá el proyecto.
+5. Confirmá que SPREADSHEET_ID esté definido en Configuración del proyecto > Propiedades del script.
+6. Ejecutá setup() una vez y autorizá los permisos solicitados. No vuelve a generar el superadmin si ya existe.
+7. Implementar > Gestionar implementaciones > lápiz > Versión: Nueva versión > Implementar.
+8. Mantené APPS_SCRIPT_URL con la URL /exec del despliegue actualizado.
+9. Volvé a la app y usá Proyectos > Seleccionar Excel > Subir Excel.
+
+Importante:
+- El script guarda los proyectos en la pestaña 'proyecto' y las estimaciones en 'tiempo_obra'.
+- Importar reemplaza 'proyecto'; no borra ni modifica 'tiempo_obra'.
+- Drive API convierte el .xls/.xlsx a Google Sheets para leer sus filas.
+- Si solo querés probar interfaz: VITE_DEMO_MODE=true en .env; usar 'Actualizar vista previa' sin backend.

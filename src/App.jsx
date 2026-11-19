@@ -12,6 +12,7 @@ import {DEMO_DATA,isDemo,readDemo,saveDemo} from './lib/demo.js';
 import CapacityStudio from './components/CapacityStudio.jsx';
 import {previewExcelFile} from './lib/excelImport.js';
 import {request,readFileAsBase64} from './lib/api.js';
+import {isPickupProject} from './lib/workBlocks.js';
 
 const NAV=[
   {id:'planning',label:'Capacidad y Gantt',icon:Activity},
@@ -32,7 +33,7 @@ function SectionHead({eyebrow,title,sub,action}) {return <div className="section
 function Metric({icon:Icon,label,value,hint,tone='blue'}) {return <div className="metric"><div className={'metric-icon '+tone}><Icon size={20}/></div><div className="metric-label">{label}</div><div className="metric-number">{value}</div><div className="metric-hint">{hint}</div></div>;}
 function Notice({children,type='info'}) {return <div role="status" className={'notice '+type}>{children}</div>;}
 function DateCell({date}) {return <span className="date-text">{strDate(date)}</span>;}
-function ProjectName({p}) {return <div className="project-cell"><strong>{p.proyecto||'Proyecto sin nombre'}</strong><small>{p.numero} · {p.cliente||'Cliente sin especificar'}</small></div>;}
+function ProjectName({p}) {return <div className="project-cell"><strong>{p.proyecto||'Proyecto sin nombre'}</strong><small>{p.numero} · {p.cliente||'Cliente sin especificar'}</small>{/retiro\s+en\s+abalum/i.test(String(p.grupo||''))&&<small className="block muted">Retiro en ABALUM · sin colocación</small>}</div>;}
 function ProjectTable({projects,estimates=[],onEstimate,compact=false}) {
   if(!projects.length)return <Empty title="No hay proyectos" desc="Importá tu primera hoja o modificá los filtros."/>;
   return <div className="table-wrap"><table><thead><tr><th>Proyecto / cliente</th><th>Estado</th><th>Inicio considerado</th>{!compact&&<th>Producción</th>}<th>Tiempo de obra</th><th className="right">{onEstimate?'Acción':'Artículos'}</th></tr></thead><tbody>
@@ -41,8 +42,8 @@ function ProjectTable({projects,estimates=[],onEstimate,compact=false}) {
       <td><Pill tone={p.estado==='Ejecucion'?'green':p.estado==='Aprobado'?'blue':'slate'}>{p.estado||'Sin estado'}</Pill></td>
       <td><DateCell date={effectiveStart(p)}/>{!p.inicio && p.inicioP && <small className="block muted">Inicio previsto</small>}</td>
       {!compact&&<td><span className="muted">{p.produccion||'—'}</span></td>}
-      <td>{e?<><strong>{formatNumber(e.value)} {e.unit}</strong>{e.outsourced&&<small className="block"><Pill tone="violet">Tercerizada</Pill></small>}</>:<Pill tone="amber">Pendiente de estimar</Pill>}</td>
-      <td className="right">{onEstimate?<button className="btn tiny secondary" onClick={()=>onEstimate(p)}>{e?'Editar':'Estimar'} <ArrowRight size={14}/></button>:formatNumber(p.items||0,0)}</td>
+      <td>{isPickupProject(p)?<Pill tone="slate">No requiere colocación</Pill>:e?<><strong>{formatNumber(e.value)} {e.unit}</strong>{e.outsourced&&<small className="block"><Pill tone="violet">Tercerizada</Pill></small>}</>:<Pill tone="amber">Pendiente de estimar</Pill>}</td>
+      <td className="right">{onEstimate?(isPickupProject(p)?<span className="muted">—</span>:<button className="btn tiny secondary" onClick={()=>onEstimate(p)}>{e?'Editar':'Estimar'} <ArrowRight size={14}/></button>):formatNumber(p.items||0,0)}</td>
     </tr>;})}
   </tbody></table></div>;
 }
@@ -75,7 +76,7 @@ function Dashboard({data,go}) {
     <SectionHead eyebrow="VISIÓN GENERAL" title="Panel de trabajo" sub="Estado actual de las obras y su estimación de esfuerzo." action={<button className="btn primary" onClick={()=>go('times')}><Plus size={16}/> Cargar un tiempo</button>}/>
     <div className="metrics-grid">
       <Metric icon={FolderKanban} label="Obras activas" value={summary.projects} hint="Consolidadas desde el origen"/>
-      <Metric icon={Timer} label="Tiempos definidos" value={`${summary.estimated} / ${summary.projects}`} hint={`${summary.pending} pendientes de estimar`} tone="green"/>
+      <Metric icon={Timer} label="Tiempos definidos" value={`${summary.estimated} / ${projects.filter(p=>!isPickupProject(p)).length}`} hint={`${summary.pending} pendientes de estimar`} tone="green"/>
       <Metric icon={UsersRound} label="Capacidad del equipo" value={`${formatNumber(capacity,0)} h`} hint={`${data.teamSize} personas · por semana tipo`} tone="violet"/>
       <Metric icon={CloudUpload} label="Obras tercerizadas" value={outsourced} hint="No consumen capacidad interna" tone="amber"/>
     </div>
@@ -109,8 +110,8 @@ function Projects({data,actor,run,go,onEstimate}) {
 function Times({data,actor,run,selection,onSelect}) {
   const [term,setTerm]=useState('');const [estimate,setEstimate]=useState({value:'',unit:'horas',outsourced:false,address:'',notes:''});const [crew,setCrew]=useState(3);
   const [editing,setEditing]=useState(false);
-  const sorted=useMemo(()=>sortProjects(data.projects).filter(p=>[p.numero,p.cliente,p.proyecto].some(v=>String(v||'').toLowerCase().includes(term.toLowerCase()))),[data.projects,term]);
-  const chosen=data.projects.find(p=>String(p.id)===String(selection));
+  const sorted=useMemo(()=>sortProjects(data.projects).filter(p=>!isPickupProject(p)&&[p.numero,p.cliente,p.proyecto].some(v=>String(v||'').toLowerCase().includes(term.toLowerCase()))),[data.projects,term]);
+  const chosen=data.projects.find(p=>String(p.id)===String(selection)&&!isPickupProject(p));
   useEffect(()=>{
     if(!chosen){setEditing(false);return;}
     const old=data.estimates.find(e=>String(e.projectId)===String(chosen.id));
@@ -118,7 +119,7 @@ function Times({data,actor,run,selection,onSelect}) {
   },[selection,data.estimates,chosen?.id]);
   const personHours=getPersonHours(estimate.value,estimate.unit);
   return <>
-    <SectionHead eyebrow="ESTIMACIÓN DE ESFUERZO" title="Tiempos de obra" sub="Cada tiempo se registra para un equipo base de 2 personas. Podés editarlo cuando cambie la estimación."/>
+    <SectionHead eyebrow="ESTIMACIÓN DE ESFUERZO" title="Tiempos de obra" sub="Tiempo de colocación para dos personas. Las obras de retiro en ABALUM no se estiman."/>
     <div className="times-grid"><div className="panel"><div className="panel-heading"><div><h2>Seleccionar obra</h2><p>Un tiempo por proyecto, editable.</p></div></div><div className="search-control in-panel"><Search size={17}/><input aria-label="Buscar obra para estimar" placeholder="Buscar proyecto…" value={term} onChange={e=>setTerm(e.target.value)}/></div><div className="selection-list">
       {sorted.map(p=>{const e=data.estimates.find(x=>String(x.projectId)===String(p.id));return <button className={'selection-item '+(String(p.id)===String(selection)?'selected':'')} key={p.id} onClick={()=>onSelect(p.id)}><div><strong>{p.proyecto}</strong><small>{p.numero} · {p.cliente}</small></div>{e?<Check size={17} className="check"/>:<Plus size={17}/>}</button>;})}
       {!sorted.length&&<Empty title="Sin coincidencias" desc="Probá otra búsqueda."/>}
@@ -176,17 +177,17 @@ function Users({data,actor,run}) {
   const [editingUsername,setEditingUsername]=useState(null);
   const existing=editingUsername!==null;
   return <><SectionHead eyebrow="SEGURIDAD Y PERMISOS" title="Usuarios" sub="Solo los usuarios habilitados pueden ingresar. El superadministrador administra cuentas y permisos."/>
-    {actor.role==='SUPERADMIN'&&<div className="panel"><div className="panel-heading"><div><h2>Agregar o actualizar usuario</h2><p>Usuario y contraseña propios de ObraTiempo. Al editar, dejar la contraseña vacía permite conservarla.</p></div></div>
+    {actor.role==='SUPERADMIN'&&<div className="panel" id="users-editor"><div className="panel-heading"><div><h2>Agregar o actualizar usuario</h2><p>Elegí «Editar» para cambiar la clave de una cuenta. Dejala vacía si no querés cambiarla. Se acepta desde 1 carácter, aunque se recomienda una clave más larga.</p></div></div>
       <form className="events-form" onSubmit={async e=>{e.preventDefault();const saved=await run('user.save',{user:form},null,'Usuario guardado.');if(saved){setForm(blank());setEditingUsername(null);}}}>
         <label className="field grow">Usuario<input required minLength="3" maxLength="32" pattern="[a-zA-Z0-9._-]{3,32}" disabled={existing} autoCapitalize="none" value={form.username} onChange={e=>setForm(v=>({...v,username:e.target.value.toLowerCase()}))} placeholder="ej. juan.perez"/></label>
         <label className="field grow">Nombre<input required value={form.name} onChange={e=>setForm(v=>({...v,name:e.target.value}))}/></label>
-        <label className="field grow">{existing?'Nueva contraseña (opcional)':'Contraseña'}<input type="password" autoComplete="new-password" required={!existing} minLength="10" value={form.password} onChange={e=>setForm(v=>({...v,password:e.target.value}))} placeholder={existing?'Dejar vacía para mantener':'Mínimo 10 caracteres'}/></label>
+        <label className="field grow">{existing?`Nueva contraseña para ${editingUsername} (opcional)`:'Contraseña'}<input type="password" autoComplete="new-password" required={!existing} minLength="1" maxLength="200" value={form.password} onChange={e=>setForm(v=>({...v,password:e.target.value}))} placeholder={existing?'Dejar vacía para mantener':'Desde 1 carácter (menos seguro)'}/></label>
         <label className="field">Rol<select value={form.role} onChange={e=>setForm(v=>({...v,role:e.target.value}))}>{['ADMIN','PLANIFICADOR','LECTOR','SUPERADMIN'].map(r=><option key={r}>{r}</option>)}</select></label>
         <label className="field">Estado<select value={String(form.active)} onChange={e=>setForm(v=>({...v,active:e.target.value==='true'}))}><option value="true">Activo</option><option value="false">Inactivo</option></select></label>
         <button className="btn primary align-end" type="submit"><Plus size={16}/> Guardar</button>
         {existing&&<button className="btn secondary align-end" type="button" onClick={()=>{setForm(blank());setEditingUsername(null);}}>Cancelar edición</button>}
       </form></div>}
-    <div className="panel margin-top"><div className="panel-heading"><div><h2>Usuarios autorizados</h2><p>{data.users.length} usuarios registrados</p></div></div><div className="table-wrap"><table><thead><tr><th>Nombre</th><th>Usuario</th><th>Rol</th><th>Estado</th>{actor.role==='SUPERADMIN'&&<th className="right">Acción</th>}</tr></thead><tbody>{data.users.map(u=><tr key={u.username}><td><strong>{u.name}</strong></td><td>{u.username||'Sin usuario asignado'}</td><td><Pill tone={u.role==='SUPERADMIN'?'violet':'slate'}>{u.role}</Pill></td><td><Pill tone={u.active===true||String(u.active)==='true'?'green':'amber'}>{u.active===true||String(u.active)==='true'?'Activo':'Inactivo'}</Pill></td>{actor.role==='SUPERADMIN'&&<td className="right"><button className="btn tiny secondary" disabled={!u.username} onClick={()=>{setEditingUsername(u.username);setForm({username:u.username,name:u.name,role:u.role,active:u.active===true||String(u.active)==='true',password:''});}}>Editar</button></td>}</tr>)}</tbody></table></div>{!data.users.length&&<Empty title="Sin usuarios para mostrar" desc="No hay usuarios habilitados todavía."/>}</div>
+    <div className="panel margin-top"><div className="panel-heading"><div><h2>Usuarios autorizados</h2><p>{data.users.length} usuarios registrados</p></div></div><div className="table-wrap"><table><thead><tr><th>Nombre</th><th>Usuario</th><th>Rol</th><th>Estado</th>{actor.role==='SUPERADMIN'&&<th className="right">Acción</th>}</tr></thead><tbody>{data.users.map(u=><tr key={u.username}><td><strong>{u.name}</strong></td><td>{u.username||'Sin usuario asignado'}</td><td><Pill tone={u.role==='SUPERADMIN'?'violet':'slate'}>{u.role}</Pill></td><td><Pill tone={u.active===true||String(u.active)==='true'?'green':'amber'}>{u.active===true||String(u.active)==='true'?'Activo':'Inactivo'}</Pill></td>{actor.role==='SUPERADMIN'&&<td className="right"><button className="btn tiny secondary" title="Editar usuario o cambiar su contraseña" disabled={!u.username} onClick={()=>{setEditingUsername(u.username);setForm({username:u.username,name:u.name,role:u.role,active:u.active===true||String(u.active)==='true',password:''});document.getElementById('users-editor')?.scrollIntoView({behavior:'smooth',block:'start'});}}>Editar / clave</button></td>}</tr>)}</tbody></table></div>{!data.users.length&&<Empty title="Sin usuarios para mostrar" desc="No hay usuarios habilitados todavía."/>}</div>
   </>;
 }
 function Help({go}) {return <><SectionHead eyebrow="DOCUMENTACIÓN INTEGRADA" title="Cómo funciona" sub="Reglas de negocio y recorrido de uso de ObraTiempo. El mismo detalle está en README.md."/>
@@ -197,6 +198,7 @@ function Help({go}) {return <><SectionHead eyebrow="DOCUMENTACIÓN INTEGRADA" ti
     <h2>5. Tercerización</h2><p>Una obra tercerizada conserva su tiempo estimado y su historial, pero <b>no consume capacidad interna</b> en la planificación. La fecha comprometida con el tercero se administrará en una etapa posterior.</p>
     <h2>6. Seguridad y Calendar</h2><p>Roles: SUPERADMIN, ADMIN, PLANIFICADOR y LECTOR. Apps Script valida usuario, token vigente y rol en cada solicitud. El token se guarda en el navegador durante 30 días o hasta cerrar sesión. Google Calendar crea eventos en el calendario configurado en Apps Script, sujeto a los días laborables y bloqueos.</p>
     <h2>7. Capacidad y Gantt mensual (vista previa)</h2><p>La pantalla Capacidad y Gantt permite simular equipos, refuerzos, bajas, asignaciones simultáneas y tercerización, sin limitar la ocupación al 100%. Ocupación mensual = horas-persona programadas en el mes / capacidad disponible del mes. Las obras sin estimación o sin fecha de asignación no se incluyen todavía. La dirección se carga con el tiempo de colocación y no modifica la hoja proyecto. Personal y asignaciones se guardan localmente durante esta fase UX, no en Apps Script. Los kilómetros, traslados reales y fechas comprometidas se agregarán después.</p>
+    <h2>8. Cubitos, backlog y personal auxiliar (v0.5)</h2><p>Cada cubito es una tarea individual movible en el futuro. Lo que quedó programado en el pasado es solo lectura y no se supone ejecutado. Pueden crearse tareas extra y guardar saldos pendientes en backlog si llueve o se finaliza solo parcialmente. Tocá el día del Gantt para ver ocupación y personas de cada equipo. Los auxiliares de Producción se incorporan a Colocación únicamente en las fechas solicitadas. Las obras del grupo <b>Retiro en Abalum</b> quedan fuera de la planificación. Todo el módulo de tareas sigue guardado solo en el navegador y no está sincronizado con Apps Script.</p>
     </div><div className="help-side"><div className="panel"><div className="panel-heading"><h2>Ruta recomendada</h2></div><div className="steps"><div><b>01</b><span>Importar proyectos</span></div><div><b>02</b><span>Estimar tiempo por obra</span></div><div><b>03</b><span>Definir equipo y jornadas</span></div><div><b>04</b><span>Cargar feriados y recesos</span></div><div><b>05</b><span>Crear eventos y planificar</span></div></div><button className="btn primary full" onClick={()=>go('projects')}>Ir a proyectos <ArrowRight size={16}/></button></div><div className="panel"><div className="panel-heading"><h2>Archivos del proyecto</h2></div><p className="muted">README.md explica el uso. README_AI.md contiene las convenciones técnicas para próximas modificaciones.</p><Pill tone="blue">React + Vite + Apps Script</Pill></div></div></div>
   </>;}
 function App() {
@@ -255,7 +257,7 @@ function App() {
     </aside>
     {menuOpen&&<button className="mobile-overlay" aria-label="Cerrar menú" onClick={()=>setMenuOpen(false)}/>}
     <div className="main-layout"><header className="topbar"><div className="topbar-left"><button className="menu-toggle" aria-label="Abrir menú" onClick={()=>setMenuOpen(true)}><Menu size={22}/></button><span>Gestión de tiempo</span><ChevronRight size={14}/><b>{NAV.find(x=>x.id===screen)?.label}</b></div><div className="topbar-right">{isDemo&&<Pill tone="amber">Modo demo</Pill>}<span className="online"><span/> {isDemo?'Local':'Conectado'}</span><button className="btn tiny secondary" onClick={()=>go('planning')}><UsersRound size={15}/> Planificar equipos</button></div></header>
-    <main className="content" id="main-content">{page[screen]}</main><footer className="footer"><span>ABALUM · ObraTiempo v0.4 · UX de capacidad</span><span>Gestión de tiempos y capacidad · <button onClick={()=>go('help')}>Documentación</button></span></footer></div>
+    <main className="content" id="main-content">{page[screen]}</main><footer className="footer"><span>ABALUM · ObraTiempo v0.5 · UX de tareas</span><span>Gestión de tiempos y capacidad · <button onClick={()=>go('help')}>Documentación</button></span></footer></div>
     {busy&&<div className="loading-overlay" role="status"><RefreshCw size={22} className="spin"/> Procesando…</div>}
     {toast&&<div role="alert" className={'toast '+toast.type}><span>{toast.message}</span><button onClick={()=>setToast(null)} aria-label="Cerrar aviso"><X size={16}/></button></div>}
   </div>;

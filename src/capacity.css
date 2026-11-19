@@ -55,3 +55,67 @@
 @media print {
   .cap-gantt-block:not(.alt) {background:#C9233B!important}
 }
+/* ── v0.5: cubitos de trabajo, backlog y personal auxiliar ── */
+.cap-root .cap-gantt-table thead th .cap-day-button{display:flex;flex-direction:column;align-items:center;justify-content:center;background:transparent;border:0;color:inherit;width:100%;height:100%;gap:2px;padding:1px;cursor:pointer}
+.cap-root .cap-day-button>span{font-size:8px;color:#a4a6ac}
+.cap-root .cap-day-button>b{font-size:11px;color:#5c6069}
+.cap-root .cap-gantt-table th.chosen,.cap-root .cap-gantt-table td.chosen{background:#fff0f2!important}
+.cap-root .cap-day-slot{display:flex;flex-direction:column;justify-content:center;gap:3px;min-height:38px}
+.cap-root .cap-block-task{width:100%;min-width:28px;border:0;border-radius:5px;background:#c9233b;color:white;padding:5px 1px;display:flex;align-items:center;justify-content:center;gap:2px;font-size:8px;box-shadow:inset 0 -3px rgba(0,0,0,.09);cursor:grab}
+.cap-root .cap-block-task b{font-size:8px;white-space:nowrap}
+.cap-root .cap-block-task.done{background:#2d9e80;cursor:default}
+.cap-root .cap-block-task.unverified{background:repeating-linear-gradient(135deg,#92959c 0px,#92959c 5px,#aaadb4 5px,#aaadb4 10px);cursor:default}
+.cap-root .cap-block-task.alt:not(.done):not(.unverified){background:#6f7085}
+.cap-root .cap-empty-day{background:transparent;border:0;width:100%;min-height:36px;color:transparent}
+.cap-root .cap-empty-day:hover,.cap-root .cap-empty-day:focus-visible{color:#c9233b;background:#fff3f5}
+.cap-root .cap-daily-heat{border:0;background:transparent;width:100%;padding:4px 0;cursor:pointer}
+.cap-root .cap-text-button{display:inline-flex;align-items:center;gap:4px;border:0;background:transparent;color:#b32539;font-weight:700;font-size:10px;padding:5px}
+.cap-root .cap-text-button.danger{color:#a46464}
+.cap-root .cap-rename{width:min(380px,100%)}
+.cap-root .cap-rename input{width:100%;min-width:90px}
+.cap-root .cap-crew-title{gap:8px;flex-wrap:wrap}
+.cap-root .cap-crew-title span{margin-left:auto}
+.cap-root .cap-member{gap:7px;flex-wrap:wrap}
+.cap-root .cap-people-v5 .cap-people-side{min-width:0}
+.cap-root .cap-inline-actions{display:flex;gap:8px;flex-wrap:wrap}
+.cap-root .cap-daily-detail,.cap-root .cap-task-inspector,.cap-root .cap-backlog,.cap-root .cap-extra-form{margin-top:18px}
+.cap-root .cap-daily-detail .cap-intro label{font-size:11px;font-weight:700;color:#555;display:flex;align-items:center;gap:8px}
+.cap-root .cap-daily-detail input[type=date]{padding:8px;border:1px solid #e4e4e7;border-radius:7px}
+.cap-root .cap-daily-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+.cap-root .cap-daily-card{border:1px solid #e9e9ec;background:#fdfdfe;border-radius:10px;padding:14px;min-width:0}
+.cap-root .cap-daily-card>strong{font-size:12px;color:#272932;display:block;margin-bottom:10px}
+.cap-root .cap-daily-figures{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+.cap-root .cap-daily-figures b{font-size:24px;color:#20232a}
+.cap-root .cap-daily-figures span{font-size:10px;color:#717681;text-align:right}
+.cap-root .cap-daily-card>small{font-size:10px;color:#777b84;display:block;min-height:30px;margin:9px 0;line-height:1.6}
+.cap-root .cap-day-bar{background:#eeeff1;height:7px;border-radius:15px;overflow:hidden}
+.cap-root .cap-day-bar>i{display:block;background:#2d9e80;height:100%;min-width:0;border-radius:15px}
+.cap-root .cap-day-bar>i.over{background:#c9233b}
+.cap-root .cap-task-info{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:17px}
+.cap-root .cap-task-info>span{padding:8px 10px;background:#f5f5f6;border-radius:7px;font-size:11px;color:#626771}
+.cap-root .cap-task-history{border-left:3px solid #90949b;background:#f8f8fa;padding:14px 18px;font-size:11px;color:#646a73}
+.cap-root .cap-task-history strong{font-size:12px;color:#42454d}
+.cap-root .cap-task-edit-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.cap-root .cap-task-edit-grid>label,.cap-root .cap-task-workers{font-size:11px;color:#626771;font-weight:750;display:flex;flex-direction:column;gap:6px;min-width:0}
+.cap-root .cap-task-edit-grid input:not([type=checkbox]),.cap-root .cap-task-edit-grid select{width:100%;min-height:38px;min-width:0;border:1px solid #e5e5e9;background:white;border-radius:8px;padding:8px 9px;font:inherit;color:#272932}
+.cap-root .cap-task-workers{grid-column:1/-1;border:1px solid #ececef;border-radius:9px;padding:10px 13px}
+.cap-root .cap-task-workers legend{padding:0 5px;font-weight:800}
+.cap-root .cap-task-workers>small{font-size:10px;color:#777b84;font-weight:400}
+.cap-root .cap-task-workers>div{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
+.cap-root .cap-task-workers label{background:#f7f7f8;border:1px solid #e8e8eb;padding:8px;border-radius:7px;display:flex;gap:6px;align-items:center;font-size:10px;cursor:pointer}
+.cap-root .cap-task-workers input{accent-color:#c9233b}
+.cap-root .cap-task-actions{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:9px}
+.cap-root .cap-task-execution{grid-column:1/-1;border-top:1px solid #e9e9eb;padding-top:16px;display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap}
+.cap-root .cap-task-execution label{font-size:10px;color:#626771;display:flex;flex-direction:column;gap:5px}
+.cap-root .cap-task-execution input{padding:10px;width:125px;border:1px solid #e5e5e9;border-radius:8px}
+.cap-root .cap-backlog-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px}
+.cap-root .cap-backlog-item{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:12px;border-radius:9px;background:#faf9fa;border:1px solid #eae8eb}
+.cap-root .cap-backlog-item span{font-size:11px;color:#555;line-height:1.5}
+.cap-root .cap-backlog-item b{color:#b02238}
+.cap-root .cap-backlog-item small{display:block;font-size:9px;color:#858a94;margin-top:3px}
+.cap-root .cap-count{border-radius:99px;background:#f8edef;padding:7px 10px;color:#af2439;font-size:10px;font-weight:750}
+.cap-root .cap-extra-form .cap-btn.primary{margin-top:14px}
+.cap-root button:disabled{cursor:not-allowed;opacity:.58}
+@media(max-width:960px){.cap-root .cap-task-edit-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:650px){.cap-root .cap-task-edit-grid{grid-template-columns:1fr}.cap-root .cap-daily-cards{grid-template-columns:1fr}.cap-root .cap-member .cap-text-button{padding:3px}.cap-root .cap-crew-title span{margin-left:0}.cap-root .cap-gantt-table td,.cap-root .cap-gantt-table thead th{min-width:39px;width:39px}.cap-root .cap-gantt-table .cap-project-col,.cap-root .cap-gantt-table th.cap-gantt-sticky{min-width:175px!important;width:175px!important;max-width:175px!important}}
+@media print{.cap-task-inspector,.cap-extra-form,.cap-backlog,.cap-people-v5 .cap-text-button{display:none!important}}

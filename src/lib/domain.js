@@ -56,9 +56,10 @@ export function countDailyHours(date,week=WEEK,holidays=[],recesses=[],projectId
   return dailyCapacity(week.find(w=>Number(w.day)===dow));
 }
 export function projectSummary(projects,estimates) {
-  const assigned = projects.filter(p=>estimates.some(e=>String(e.projectId)===String(p.id)));
+  const eligible=projects.filter(p=>!(/retiro\s+en\s+abalum/i).test(String(p.grupo||'')));
+  const assigned = eligible.filter(p=>estimates.some(e=>String(e.projectId)===String(p.id)));
   const activeIds = new Set(projects.map(p=>String(p.id)));
-  const total = estimates.filter(e=>activeIds.has(String(e.projectId)) && e.outsourced!==true && String(e.outsourced)!=='true').reduce((s,e)=>s+getPersonHours(e.value,e.unit),0);
-  return {projects:projects.length,estimated:assigned.length,pending:projects.length-assigned.length,personHours:total};
+  const total = estimates.filter(e=>activeIds.has(String(e.projectId)) && e.outsourced!==true && String(e.outsourced)!=='true' && !(/retiro\s+en\s+abalum/i).test(String(projects.find(p=>String(p.id)===String(e.projectId))?.grupo||''))).reduce((s,e)=>s+getPersonHours(e.value,e.unit),0);
+  return {projects:projects.length,estimated:assigned.length,pending:eligible.length-assigned.length,personHours:total};
 }
 export function formatNumber(value,digits=1) {return new Intl.NumberFormat('es-AR',{maximumFractionDigits:digits}).format(Number(value)||0);}

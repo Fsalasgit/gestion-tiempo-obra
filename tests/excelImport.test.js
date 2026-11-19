@@ -12,3 +12,9 @@ test('Se agrupan artículos del formato anterior, sin alterar los tiempos',()=>{
  const r=normalizeProjectRows([{Numero:'PR-11',Proyecto:'Obra', 'PR - Estado':'Ejecucion','Project ID':'20'},{Numero:'PR-11',Proyecto:'Obra', 'PR - Estado':'Ejecucion','Project ID':'20'}]);assert.equal(r.projects[0].items,2);assert.equal(r.projects.length,1);
 });
 test('Los proyectos de demostración son ficticios y tienen claves únicas',()=>{assert.equal(projects.length,6);assert.equal(new Set(projects.map(p=>p.id)).size,6);assert(projects.every(p=>p.estado!=='Terminado'&&p.numero));});
+
+
+test('Importa columna Grupo para excluir Retiro en ABALUM de la planificación',()=>{
+  const normalized=normalizeProjectRows([{Numero:'PR-200',Nombre:'Retiro de piezas',Estado:'Aprobado',Grupo:'Retiro en Abalum'}]);
+  assert.equal(normalized.projects[0].grupo,'Retiro en Abalum');
+});

@@ -60,3 +60,7 @@ Si el repositorio ya existe, NO repetir `git init` ni `remote add`: basta `git a
 ## Guía de color
 
 `src/styles.css`: variables `--abalum-*`. `src/capacity.css`: `--cap-*`. El rojo y grafito son aproximaciones visuales coherentes con la marca, no códigos validados contra su manual oficial.
+
+## Versión 0.5 · luego del despliegue anterior
+
+Además de subir el frontend actualizado a GitHub/Vercel, reemplazar `backend/apps-script/Code.gs`, ejecutar `setup()` y crear una **nueva versión** de la implementación web de Apps Script: el backend ahora incluye `grupo` al final de `proyecto` y admite contraseñas desde un carácter (inseguro para producción). Volver a importar el Excel para precargar `Grupo`. Los nuevos cubitos y operarios auxiliares siguen siendo **una vista previa local**, no se comparten entre navegadores.

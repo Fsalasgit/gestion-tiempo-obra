@@ -1,5 +1,5 @@
 /**
- * ObraTiempo · Apps Script API (v0.3)
+ * ObraTiempo · Apps Script API (v0.5)
  * Desplegar como Web App "Ejecutar como yo", acceso "Cualquier usuario".
  * Inicio de sesión propio: usuario + contraseña, token aleatorio en sesiones.
  * Cada acción valida token y rol desde Google Sheets, sin Google Login.
@@ -7,7 +7,7 @@
  * SUPERADMIN_PASSWORD (solo para setup inicial) y CALENDAR_ID (opcional).
  */
 const HEADERS_ = {
-  proyecto:['id','numero','cliente','proyecto','estado','produccion','entrega','lider','inicio','inicioP','fechaEntrega','items','actualizado','localidad'],
+  proyecto:['id','numero','cliente','proyecto','estado','produccion','entrega','lider','inicio','inicioP','fechaEntrega','items','actualizado','localidad','grupo'],
   tiempo_obra:['projectId','value','unit','crewReference','outsourced','notes','updatedAt','updatedBy','address'],
   usuarios:['email','name','role','active','createdAt','username','passwordSalt','passwordHash'],
   sesiones:['tokenHash','username','expiresAt','createdAt'],
@@ -40,7 +40,7 @@ function setup() {
   if(!validUsername_(username))throw Error('SUPERADMIN_USERNAME inválido: usá entre 3 y 32 letras, números, puntos, guiones o guiones bajos.');
   if(!all_('usuarios').some(u=>u.username===username)) {
     const password=String(prop.getProperty('SUPERADMIN_PASSWORD')||'');
-    if(password.length<10)throw Error('Definir SUPERADMIN_PASSWORD de al menos 10 caracteres en propiedades, solo para setup().');
+    if(password.length<1 || password.length>200)throw Error('Definir SUPERADMIN_PASSWORD de 1 a 200 caracteres en propiedades, solo para setup().');
     const salt=Utilities.getUuid()+'-'+Utilities.getUuid();
     append_('usuarios',{email:'',username,name:'Superadministrador',role:'SUPERADMIN',active:true,createdAt:now_(),passwordSalt:salt,passwordHash:hashPassword_(password,salt)});
     prop.deleteProperty('SUPERADMIN_PASSWORD'); // No conservar la clave inicial en propiedades.
@@ -49,7 +49,7 @@ function setup() {
   if (!all_('configuracion').some(r=>r.key==='teamSize')) append_('configuracion',{key:'teamSize',value:'3'});
   Logger.log('Configurado: '+ss.getUrl());
 }
-function doGet() {return json_({ok:true, data:{app:'ObraTiempo API',status:'online',version:'0.3'}});}
+function doGet() {return json_({ok:true, data:{app:'ObraTiempo API',status:'online',version:'0.5'}});}
 function doPost(e) {
   try {
     if (!e || !e.postData || !e.postData.contents || e.postData.contents.length>11000000) throw Error('Solicitud inválida o demasiado grande.');
@@ -251,7 +251,7 @@ function saveUser_(u,actor) {
   const mainAdmin=String(PropertiesService.getScriptProperties().getProperty('SUPERADMIN_USERNAME')||'admin').trim().toLowerCase();
   if(u.role==='SUPERADMIN' && actor.username!==mainAdmin)throw Error('Solo el titular puede conceder SUPERADMIN.');
   const pass=String(u.password||'');
-  if((!old || pass) && (pass.length<10 || pass.length>200))throw Error('La contraseña debe tener entre 10 y 200 caracteres.');
+  if((!old || pass) && (pass.length<1 || pass.length>200))throw Error('La contraseña debe tener entre 1 y 200 caracteres.');
   const passwordSalt=pass?Utilities.getUuid()+'-'+Utilities.getUuid():(old?.passwordSalt||'');
   const passwordHash=pass?hashPassword_(pass,passwordSalt):(old?.passwordHash||'');
   upsert_('usuarios','username',{email:old?.email||'',username,name:String(u.name||username).slice(0,120),role:u.role,active:!!u.active,createdAt:old?.createdAt||now_(),passwordSalt,passwordHash});
@@ -283,7 +283,7 @@ function importSheet_(id,name,actor) {
       id,numero,cliente:String(get(row,'cliente')||'').trim(),proyecto:nombre,
       estado,produccion:String(get(row,idx.producido!==undefined?'producido':'produccion')||'').trim(),entrega:String(get(row,'entrega')||'').trim(),
       lider:String(get(row,idx.liderproyecto!==undefined?'liderproyecto':'liderdeproyecto')||'').trim(),inicio:toISO_(get(row,'inicio')),inicioP:toISO_(get(row,'iniciop')),
-      localidad:String(get(row,'localidadproyecto')||'').trim(),
+      localidad:String(get(row,'localidadproyecto')||'').trim(),grupo:String(get(row,idx.grupo!==undefined?'grupo':'grupoproyecto')||'').trim(),
       fechaEntrega:toISO_(get(row,idx.finp!==undefined?'finp':'fecentrega')),items:0,actualizado:now_()
     });
     const p=projects.get(id);p.items++;items++;

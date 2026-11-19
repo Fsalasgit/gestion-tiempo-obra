@@ -43,3 +43,18 @@ Leé este archivo antes de modificar el código. Objetivo **actual**: evaluar UX
 - Verde = capacidad normal, ámbar = advertencia, rojo tramado = sobrecarga, violeta = trabajo tercerizado. El rojo ABALUM también se utiliza para botones primarios y obras del Gantt; el estado se distingue por tramas y texto.
 - Nombre visible: **ABALUM · ObraTiempo**, sin suplantar el logotipo corporativo real. El favicon y la marca pueden sustituirse si se facilita un archivo de logo oficial.
 - Implementación en Vercel: ver `README_VERCEL.md`. `APPS_SCRIPT_URL` solo servidor; `VITE_DEMO_MODE=false` al desplegar.
+
+## REGLAS DE NEGOCIO v0.5 · NO ROMPER
+
+1. La pestaña `proyecto` solo es copia importada y se usa para vincular ID y verificar `Estado` y `Grupo`. Nunca editarla desde la planificación ni borrar tiempos de `tiempo_obra` en una actualización de Excel.
+2. `Grupo = Retiro en Abalum` (insensible a mayúsculas y acentos) significa **sin colocación**. No incluir estas obras en asignaciones ni ocupación.
+3. Cada **cubito** es una entidad `blocks[]` separada de `assignments[]`. `personHours` refleja horas-persona, no horas de reloj. Una tarea puede ser extra, parcial, backlog, realizada o pasada no confirmada.
+4. Una tarea planificada en el pasado **no equivale a ejecución realizada**. Ni cambiar fechas pasadas ni alterar bloques completados; mostrar quiénes trabajaron solo cuando hayan sido confirmados explícitamente, usando `workerNames` como snapshot.
+5. Los cubitos del backlog no consumen capacidad de una fecha, pero deben quedar como trabajo pendiente visible.
+6. Los auxiliares viven en `members` con `kind='auxiliar'` y se suman al equipo solo por `supportShifts` (fecha y equipo). No añadirlos a los equipos fijos de manera permanente por defecto.
+7. Cambio o salida de colaborador afecta días futuros; respetar `teamHistory` y `end` histórico, jamás reescribir automáticamente quién trabajó en el pasado.
+8. No limitar la carga al 100%; porcentaje >100% debe ser visible en informes y ocupación diaria.
+9. La UX de planificación se guarda **solo en el navegador**. No prometer sincronización, historial irrefutable ni auditoría real. Backend persiste usuarios, estimaciones, calendario y catálogo importado.
+10. `src/components/GanttTasks.jsx`, `PeopleManager.jsx`, `src/lib/workBlocks.js`, `src/lib/planner.js` son la base del módulo v0.5. Revisar `tests/tasks.test.js` y el resto de pruebas antes de cambiar algoritmos.
+11. Autenticación por usuario, contraseña y token Apps Script: sin Google Login. Longitud mínima de contraseña en prototipo: 1 carácter en ambas capas, **con riesgo reconocido** para publicación real. No eliminar hashing, tokens ni permisos.
+12. Mantener paleta ABALUM rojo/grafito/blanco, responsive y accesibilidad por teclado (edición de cubitos desde inspector, además de drag/drop).

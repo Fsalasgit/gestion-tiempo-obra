@@ -29,7 +29,7 @@ export function normalizeProjectRows(rows) {
       fechaEntrega:toISODate(field(row,['Fin P.','Fec Entrega','Fecha Entrega'])),
       produccion:str(field(row,['Producido','Produccion'])),entrega:str(field(row,['Entrega'])),
       lider:str(field(row,['Lider Proyecto','Lider de Proyecto'])),
-      localidad:str(field(row,['Localidad Proyecto'])),items:1
+      localidad:str(field(row,['Localidad Proyecto'])),grupo:str(field(row,['Grupo','Grupo Proyecto'])),items:1
     };
     if(projects.has(id)) {
       const current=projects.get(id);current.items+=1;duplicateRows++;

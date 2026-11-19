@@ -52,3 +52,12 @@ test('contraseña errónea y usuario desactivado no pueden operar',()=>{
   db.usuarios[0].active=false;
   assert.throws(()=>call(`authenticate_('${token}')`),/Usuario deshabilitado/);
 });
+
+test('El backend permite la contraseña mínima de 1 carácter y crea token',()=>{
+  const {db,call}=makeBackend();
+  const password='a',salt='salt';
+  db.usuarios.push({username:'admin',name:'Admin',role:'SUPERADMIN',active:true,passwordSalt:salt,passwordHash:call(`hashPassword_('${password}','${salt}')`)});
+  const r=call("login_('admin','a')");
+  assert.equal(typeof r.token,'string');
+  assert.equal(r.token.length,64);
+});

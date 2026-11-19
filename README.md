@@ -108,3 +108,39 @@ Se verificaron en este entorno 19 pruebas de Node y la sintaxis del JSX, pero **
 - Se eliminaron nombres de clientes/obras reales del bundle. En la demo hay seis ejemplos, y podés cargar tu Excel para visualizarlo localmente. Los proyectos reales en producción siguen viniendo de Apps Script.
 - Ver **`README_VERCEL.md`** antes de publicar. La aplicación debe desplegarse con `VITE_DEMO_MODE=false` y `APPS_SCRIPT_URL` configurado como secreto del servidor (sin prefijo `VITE_`).
 - La planificación sigue en localStorage: todavía NO se comparte entre usuarios ni se guarda en Apps Script.
+
+## v0.5 · Gantt por tareas / operarios auxiliares (UX)
+
+### Qué cambia en el Gantt
+
+- Cada cubito representa una tarea individual con `id`, proyecto, equipo, fecha, esfuerzo en **horas-persona**, personal previsto, personal registrado y estado.
+- Una obra puede tener muchos cubitos el mismo día o en fechas diferentes. En escritorio se arrastran los cubitos futuros a otros días. En teléfonos, se toca el cubito y se modifica la fecha en el inspector.
+- El **pasado es de solo lectura**. Una tarea ubicada en una fecha anterior que venga de la planificación previa se muestra como **«Pasada · sin confirmar»**, nunca como realizada automática. Los nombres de personas que trabajaron se guardan explícitamente al completar una tarea del día actual.
+- **Backlog:** una tarea futura puede quedar sin fecha por lluvia o pendiente. La carga deja de contabilizarse en una fecha específica, pero el trabajo pendiente sigue visible en la lista.
+- **Parcial:** al indicar cuántas horas-persona se ejecutaron hoy, el bloque original queda realizado con esa parte y se crea un bloque distinto para el saldo en backlog.
+- **Trabajo extra:** se pueden crear tareas de ajuste final o imprevistos en una obra con estimación, aun si toda su planificación inicial ya fue terminada.
+- Tocando el número del día en la cabecera del Gantt aparece debajo la **ocupación diaria de cada equipo**, incluyendo personas y auxiliares convocados para esa fecha. Se muestran porcentajes mayores al 100%.
+- Los proyectos cuyo campo `Grupo` sea **«Retiro en Abalum»** no se pueden asignar a colocación y no suman ocupación. No se borra ni modifica su registro de la hoja `proyecto`.
+
+### Gestión de equipos
+
+- Se puede editar el nombre de los equipos.
+- Se puede editar un colaborador, cambiarlo de equipo, dejarlo sin equipo o registrar una baja **efectiva desde hoy**. Las asignaciones de equipo anteriores se guardan en `teamHistory` y la salida de personal conserva su capacidad de fechas pasadas.
+- Se puede registrar personal **auxiliar de Producción** en una bolsa independiente. No suma capacidad a Colocación hasta convocarlo a un equipo en una fecha determinada.
+- Las ausencias nuevas solamente pueden cargarse desde el día actual en esta vista previa.
+
+### Usuarios
+
+- Desde «Usuarios → Editar / clave» el superadministrador puede indicar una **nueva contraseña**. En edición, dejar vacío conserva la clave anterior.
+- Se acepta una longitud mínima de **1 carácter** (solicitado para este prototipo) en el formulario **y también en Apps Script**. Es un criterio **inseguro para un despliegue de producción**: se recomienda exigir contraseñas robustas antes de habilitar usuarios reales en Internet.
+- El token de sesión continúa siendo generado y verificado por Apps Script. Cambiar una contraseña invalida las sesiones anteriores del usuario.
+
+### Migración del backend
+
+Como se agregó el campo `grupo` a la hoja `proyecto` y cambió la validación de contraseñas, es necesario actualizar `backend/apps-script/Code.gs`, ejecutar `setup()` una vez y **editar la implementación web creando una nueva versión**. `setup()` agrega la nueva cabecera `grupo` al final de la pestaña `proyecto` existente, sin alterar sus proyectos ni las estimaciones. Volvé a subir el Excel para completar ese campo.
+
+### Estado del producto
+
+**Planificación en localStorage por navegador, todavía no compartida entre usuarios**: no es un registro laboral auditado ni prueba de presencia efectiva en obra. El bloqueo del pasado y los registros de operarios son reglas de UX, no reglas de seguridad de servidor todavía. Antes de producción hay que llevar las tareas, historial de movimientos y asignaciones a un backend con permisos, concurrencia, control de fecha de servidor y auditoría inmutable.
+
+Las tareas creadas por la migración desde v0.4 son una reconstrucción de lo **programado**, no datos de ejecución observada.

@@ -149,3 +149,12 @@ Leé este archivo antes de modificar el código. Objetivo **actual**: evaluar UX
 - No agregar duración logística a ocupación ni al Gantt de proyecto hasta definir una etapa posterior. No editar la hoja `proyecto` desde logística.
 - Mantener sesión con username/contraseña y token actual; no introducir OAuth para los usuarios.
 - Límite funcional: ida; no calcular regreso ni múltiples paradas por ahora. No generar una API key pública en el bundle.
+
+## Reglas v1.3 para siguientes desarrollos
+
+- Dos motores independientes: `CapacityStudio` calcula ocupación con horas-persona y recursos humanos; `ProjectGantt` registra jornadas enteras de seguimiento, **sin exclusividad por equipo/día**. Nunca volver a pedir `personHours` en el formulario del Gantt por proyecto ni sumar sus jornadas a la capacidad mensual.
+- `buildProjectSchedule` sigue dependencias explícitas, jornadas laborables, feriados y sábados habilitados. Una misma cuadrilla puede figurar en múltiples tareas simultáneas, incluso dentro del mismo sector.
+- `deferTaskDays` aplaza jornadas futuras a la fecha seleccionada sin registrar motivo; `skippedDays` mantiene el cambio de planificación. `addTaskIncident` registra causas formales; `reprogramHistory` solo se crea si el usuario activa el registro opcional. Los incidentes no se publican a clientes salvo `published===true`.
+- El portal `/cliente` usa `ClientPortal.jsx`, `client.list` y `client.project`. El servidor consulta `usuarios.projectIds`, filtra por identidad autenticada y no entrega datos ajenos. Las cuentas CLIENTE **nunca** reciben `bootstrap`, `workspace.load`, `workspace.save`, `logistics.route`, catálogo completo, personal, costos, ausencias o notas privadas.
+- La planilla `proyecto` solo se modifica por importación Excel. Los dos workspaces versionados siguen alojados en `workspace_meta` y `workspace_chunks` con control de revisión.
+- Mantener README actualizado, pruebas de regresión de seguridad por roles, dependencias y colisiones permitidas. No afirmar build/deploy sin probarlo.

@@ -106,3 +106,20 @@ Se muestran velocidades del camión: 30 km/h (cargado), 50 km/h (viaje largo) o 
 **Precaución:** Apps Script Maps devuelve rutas de conducción genéricas, **no rutas con restricciones de altura, peso o acceso para camiones**. La duración del camión es *teórica* y no considera congestión dinámica, esperas, carga/descarga ni imprevistos. Confirmá siempre el destino resuelto y el trayecto en Google Maps antes de usarlo operativamente. De momento se calcula únicamente la **ida ABALUM → obra** y no se modifica la ocupación del equipo.
 
 **Backend:** para esta nueva acción sí hay que actualizar `Code.gs` y volver a publicar la implementación existente (ver `README_VERCEL.md`). No requiere crear ni exponer `VITE_GOOGLE_CLIENT_ID`, Google Login, claves de Routes API ni servicios avanzados adicionales; Maps es un servicio nativo de Apps Script, sujeto a las cuotas de Google. La hoja `proyecto` permanece sin modificaciones.
+
+## v1.3 — Gantt por jornadas y portal cliente
+
+**Ocupación mensual** continúa trabajando con horas-persona, ausencias, auxiliares y sobrecarga. **Gantt por proyecto** trabaja exclusivamente con jornadas enteras, sin campo de horas-persona, y permite varias tareas del mismo equipo en una misma fecha. Estas tareas no vuelven a consumir horas del módulo de Gerencia.
+
+- Sobre un cuadrado futuro, pulsá `⋯`, elegí la fecha destino y `Mover jornada sin registrar motivo`. Se desplaza esa jornada y las restantes sin crear una incidencia formal. Podés revertir los días saltados desde el detalle de tarea.
+- Ante lluvia, falta de material, etc., elegí `Registrar incidencia`: quedará en el Gantt como una jornada gris y en la tabla de novedades. La publicación del detalle al cliente es una opción explícita, apagada por defecto.
+- Al editar una tarea y mover fecha, cambiar equipo o duración, es opcional registrar una reprogramación con motivo. Sin activar esa opción se modifica solo la planificación.
+- Los bloqueantes son explícitos; no se crean automáticamente por compartir equipo. Una dependencia desplaza su tarea sucesora si cambia la fecha de finalización de su predecesora.
+
+### Acceso del cliente
+
+En `Usuarios` (SUPERADMIN), creá una cuenta con rol **CLIENTE** y asignale uno o más proyectos. El cliente ingresa con usuario y contraseña en `https://TU-DOMINIO-VERCEL/cliente`. Puede buscar entre sus obras y ver únicamente Gantt, estados, avances y la tabla de novedades publicadas. Apps Script valida la lista `projectIds` del usuario en servidor; jamás entrega al cliente los workspaces completos, datos de operarios, ausencias, costos ni notas internas. El portal no permite editar.
+
+**Se requiere actualizar backend y frontend**: reemplazá `backend/apps-script/Code.gs`, ejecutá `setup()` para agregar el encabezado `projectIds` a `usuarios` sin borrar cuentas, publicá una nueva versión del despliegue existente, y subí el nuevo frontend a Vercel. La ruta `/cliente` ya está configurada en `vercel.json`. Se mantienen `VITE_DEMO_MODE=false` y `APPS_SCRIPT_URL` (solo del lado del servidor). No hay Google OAuth.
+
+Verificaciones locales: 100 tests automatizados aprobados y 48 archivos JS/JSX/GS analizados sin errores sintácticos. No se logró descargar npm (`EAI_AGAIN`), por lo tanto `npm run build` y el despliegue real no están confirmados.

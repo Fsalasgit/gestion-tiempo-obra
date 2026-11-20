@@ -71,3 +71,33 @@ test('Una incidencia gris inicial se conserva al mostrar desde inicio',()=>{
  assert.equal(firstProjectActivityDate(scheduled),'2026-11-20');
  assert.equal(firstProjectActivityDate([]),'');
 });
+
+test('Un equipo puede hacer varias tareas en el mismo día en el Gantt de obra',()=>{
+ const input=[task('soportes','2026-11-23',2,{teamId:'T'}),task('descarga','2026-11-23',1,{teamId:'T'})];
+ const result=buildProjectSchedule(input,cfg,'PR');
+ assert.equal(result[0].days[0],'2026-11-23');
+ assert.equal(result[1].days[0],'2026-11-23');
+});
+
+test('Mover un cuadrado sin motivo desplaza solo jornadas restantes, no registra incidencia',async()=>{
+ const {skipTaskDay,undoSkippedDay}=await import('../src/lib/projectSchedule.js');
+ const input=[task('A','2026-11-23',3),task('B','2026-11-23',2,{dependsOn:'A'})];
+ const changed=skipTaskDay(input,'A','2026-11-24',cfg,'PR','2026-11-20');
+ const recalculated=buildProjectSchedule(changed,cfg,'PR');
+ assert.deepEqual(recalculated[0].days,['2026-11-23','2026-11-25','2026-11-26']);
+ assert.equal(recalculated[0].incidents.length,0);
+ assert.equal(recalculated[1].start,'2026-11-27');
+ const restored=undoSkippedDay(changed,'A','2026-11-24',cfg,'PR','2026-11-20');
+ assert.equal(buildProjectSchedule(restored,cfg,'PR')[0].end,'2026-11-25');
+});
+
+test('Reubicar jornadas a una fecha elegida desplaza dependientes sin motivo registrado',async()=>{
+ const {deferTaskDays}=await import('../src/lib/projectSchedule.js');
+ const input=[task('A','2026-11-23',2),task('B','2026-11-23',1,{dependsOn:'A'})];
+ const edited=deferTaskDays(input,'A','2026-11-23','2026-11-27',cfg,'PR','2026-11-20');
+ const scheduled=buildProjectSchedule(edited,cfg,'PR');
+ assert.deepEqual(scheduled[0].days,['2026-11-27','2026-11-30']);
+ assert.equal(scheduled[1].start,'2026-12-01');
+ assert.equal(scheduled[0].incidents.length,0);
+ assert.throws(()=>deferTaskDays(input,'A','2026-11-23','2026-11-23',cfg,'PR','2026-11-20'),/posterior/);
+});

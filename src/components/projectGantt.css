@@ -93,3 +93,12 @@ body.pj-client-mode .pj-header{padding:18px 4px 12px;border-bottom:2px solid #c9
 .pj-project-filter .pj-project-current{max-width:38%;display:flex;flex-direction:column;gap:5px;text-align:right;overflow-wrap:anywhere}
 .pj-project-current span{color:#8a8d95;font-size:12px}
 @media(max-width:720px){.pj-project-filter .pj-project-search,.pj-project-filter .pj-project-current{width:100%;max-width:100%;text-align:left}}
+
+/* v1.3 · Gantt por jornadas, movimientos libres y novedades */
+.pj-optional-history{background:#f9f9fa;border:1px solid #e8e9ec;border-radius:9px;padding:12px}
+.pj-optional-fields{display:grid;grid-template-columns:1fr 2fr;gap:12px;margin-top:10px}
+.pj-activity-scroll{overflow-x:auto}.pj-activity-table{width:100%;border-collapse:collapse;min-width:530px;font-size:12px}
+.pj-activity-table th,.pj-activity-table td{padding:11px 12px;text-align:left;border-bottom:1px solid #eee;vertical-align:top}
+.pj-activity-table thead{background:#f5f5f7;color:#63666e}.pj-activity-empty{color:#777}
+.pj-unlogged-moves{margin-top:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}.pj-unlogged-moves small{color:#686b75}
+@media(max-width:720px){.pj-optional-fields{grid-template-columns:1fr}}

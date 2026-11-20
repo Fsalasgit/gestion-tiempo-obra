@@ -26,3 +26,9 @@ test('No permite mover fechas ni equipo histórico; sí progreso',()=>{
 test('Una tarea puede existir sin clasificador de componente',()=>{
  assert.equal(validateTaskDates(null,{name:'Descarga de vidrios',teamId:'T',start:'2026-11-24',end:'2026-11-24',personHours:4,progress:0},'2026-11-20'),true);
 });
+
+test('En Gantt por proyecto, el avance se pondera por jornadas, sin pedir horas-persona',()=>{
+ const p=progressOverview([{durationDays:1,progress:100,status:'finalizada'},{durationDays:3,progress:0,status:'pendiente'}]);
+ assert.equal(p.percent,25);
+ assert.equal(validateTaskDates(null,{name:'Descarga',teamId:'T',start:'2026-11-23',end:'2026-11-24',durationDays:2,progress:0},'2026-11-20'),true);
+});

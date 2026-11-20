@@ -62,3 +62,7 @@ Esta versión incorpora la acción `logistics.route`; por lo tanto **actualizá 
 4. Compará la dirección que encontró Google con la dirección real; abrí «Ver en Google Maps» para verificar el camino.
 
 **Limitación:** el kilometraje utiliza rutas generales de circulación automotor, no contempla prohibiciones de camiones. El tiempo de camión es una estimación por velocidad elegida, no un ETA de tránsito en vivo. Todavía no modifica la disponibilidad de los equipos.
+
+## v1.3: portal cliente
+
+Actualizá Apps Script con `Code.gs`, ejecutá `setup()` para agregar `usuarios.projectIds` y desplegá una **nueva versión de la misma implementación**. Después subí a Vercel el frontend actualizado. El enlace a compartir con cada cuenta CLIENTE es `https://TU-DOMINIO/cliente`. Las obras autorizadas se eligen en **Usuarios**; no expongas la URL `/exec` ni credenciales del servidor al cliente.

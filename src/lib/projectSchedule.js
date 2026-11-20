@@ -52,17 +52,18 @@ export function buildProjectSchedule(tasks=[],calendar={},projectId='',{maxSearc
   if(!earliest)throw Error(`Falta la fecha de inicio de «${task.name}».`);
   const durationDays=taskDuration(task,calendar,projectId);
   const incidentMap=new Map((task.incidents||[]).map(i=>[i.date,i]));
+  const skipped=new Set((task.skippedDays||[]).filter(Boolean));
   const days=[];
   let day=earliest,tries=0;
   while(days.length<durationDays&&tries<maxSearchDays){
-   if(isWorkDate(day,task.teamId,projectId,calendar)&&!incidentMap.has(day))days.push(day);
+   if(isWorkDate(day,task.teamId,projectId,calendar)&&!incidentMap.has(day)&&!skipped.has(day))days.push(day);
    day=addDays(day,1);tries++;
   }
   if(days.length!==durationDays)throw Error(`No hay suficientes días laborables para «${task.name}».`);
   const start=days[0],end=days.at(-1);
   // Incidencias: visibles aunque el desplazamiento de un bloqueante cambie fechas.
   const incidents=(task.incidents||[]).filter(i=>i.date&&i.reason);
-  const result={...task,days,start,end,requestedStart:task.start,durationDays,incidents,
+  const result={...task,days,start,end,requestedStart:task.start,durationDays,incidents,skippedDays:[...skipped],
     dependsOnName:predecessor?.name||'',blocked:!!predecessor&&predecessor.status!=='finalizada',
     shifted:start!==task.start||end!==task.end};
   visiting.delete(id);memo.set(id,result);return result;
@@ -80,17 +81,51 @@ export function validateDependency(tasks,taskId,dependsOn){
  }
  return true;
 }
-export function addTaskIncident(tasks,taskId,{date,reason,note=''},calendar={},projectId='',today){
+export function addTaskIncident(tasks,taskId,{date,reason,note='',published=false},calendar={},projectId='',today){
  if(!reason||!INCIDENT_REASONS.some(([r])=>r===reason))throw Error('Elegí un motivo para la reprogramación.');
  if(today&&date<today)throw Error('No se permite modificar una fecha histórica.');
  const before=buildProjectSchedule(tasks,calendar,projectId);
  const current=before.find(t=>String(t.id)===String(taskId));
  if(!current||!current.days.includes(date))throw Error('Elegí una jornada planificada de esa tarea.');
  if((current.incidents||[]).some(i=>i.date===date))throw Error('Esta fecha ya tiene un motivo registrado.');
- const affected=tasks.map(t=>String(t.id)===String(taskId)?{...t,incidents:[...(t.incidents||[]),{date,reason,note:String(note).trim().slice(0,500),createdAt:new Date().toISOString()}]}:t);
+ const affected=tasks.map(t=>String(t.id)===String(taskId)?{...t,incidents:[...(t.incidents||[]),{date,reason,note:String(note).trim().slice(0,500),published:!!published,createdAt:new Date().toISOString()}]}:t);
  // Recalcula antes de confirmar; garantiza que nunca se persista un ciclo o cronograma imposible.
  buildProjectSchedule(affected,calendar,projectId);
  return affected;
+}
+/** Ajuste de planificación, sin incidencia ni motivo: desplaza esta jornada y las posteriores.
+ * No se cuenta como reprogramación publicada. Para justificar un imprevisto usá addTaskIncident.
+ */
+export function skipTaskDay(tasks,taskId,date,calendar={},projectId='',today){
+ if(today&&date<today)throw Error('No se modifican jornadas históricas.');
+ const before=buildProjectSchedule(tasks,calendar,projectId);
+ const selected=before.find(t=>String(t.id)===String(taskId));
+ if(!selected||!selected.days.includes(date))throw Error('Elegí una jornada programada.');
+ const updated=tasks.map(t=>String(t.id)===String(taskId)?{...t,skippedDays:[...new Set([...(t.skippedDays||[]),date])]}:t);
+ buildProjectSchedule(updated,calendar,projectId);
+ return updated;
+}
+/** Desplaza el bloque seleccionado y los restantes hasta una fecha objetivo, sin crear
+ * incidencia ni reprogramación formal. Ajustes anteriores se conservan.
+ */
+export function deferTaskDays(tasks,taskId,date,target,calendar={},projectId='',today){
+ if(!/^\d{4}-\d{2}-\d{2}$/.test(String(target||''))||target<=date)throw Error('Elegí una fecha posterior para trasladar la jornada.');
+ if(today&&date<today)throw Error('No se modifican jornadas históricas.');
+ const schedule=buildProjectSchedule(tasks,calendar,projectId);
+ const current=schedule.find(t=>String(t.id)===String(taskId));
+ if(!current||!current.days.includes(date))throw Error('Elegí una jornada planificada de esa tarea.');
+ const skipped=[];
+ for(let day=date;day<target&&skipped.length<180;day=addDays(day,1))skipped.push(day);
+ if(skipped.length>=180)throw Error('Solo podés mover una jornada hasta 180 días hacia adelante.');
+ const updated=tasks.map(t=>String(t.id)===String(taskId)?{...t,skippedDays:[...new Set([...(t.skippedDays||[]),...skipped])]}:t);
+ buildProjectSchedule(updated,calendar,projectId);
+ return updated;
+}
+export function undoSkippedDay(tasks,taskId,date,calendar={},projectId='',today){
+ if(today&&date<today)throw Error('No se modifican jornadas históricas.');
+ const updated=tasks.map(t=>String(t.id)===String(taskId)?{...t,skippedDays:(t.skippedDays||[]).filter(d=>d!==date)}:t);
+ buildProjectSchedule(updated,calendar,projectId);
+ return updated;
 }
 export function removeFutureIncident(tasks,taskId,date,today){
  if(date<today)throw Error('No se modifica una incidencia histórica.');

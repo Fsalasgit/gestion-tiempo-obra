@@ -28,6 +28,7 @@ function sandboxBackend(){
  const routeLeg={distance:{value:21375},duration:{value:1970},start_address:'Avenida Siria 1633',end_address:'Destino corroborado por Google'};
  const directionFinder={setOrigin(){return this;},setDestination(){return this;},setMode(){return this;},setRegion(){return this;},setLanguage(){return this;},getDirections(){routeCalls++;return {routes:[{legs:[routeLeg]}]};}};
  const context=vm.createContext({console,Date,JSON,Map,Set,Error,Logger:{log(){}},
+  ContentService:{MimeType:{JSON:'json'},createTextOutput:txt=>({setMimeType(){return this;},getContent(){return txt;}})},
   Maps:{DirectionFinder:{Mode:{DRIVING:'driving'}},newDirectionFinder:()=>directionFinder},
   CacheService:{getScriptCache:()=>({get:key=>cacheMap.get(key)||null,put:(key,value)=>cacheMap.set(key,value),remove:key=>cacheMap.delete(key)})},
   PropertiesService:{getScriptProperties:()=>({getProperty:key=>props.get(key)||null,deleteProperty:key=>props.delete(key)})},
@@ -129,4 +130,83 @@ test('consulta de rutas exige obra y dirección existentes',()=>{
  assert.throws(()=>env.run("logisticsRoute_('P-desconocido',{username:'admin'})"),/proyecto ya no figura/);
  env.run("append_('proyecto',{id:'P1',numero:'PR-1'})");
  assert.throws(()=>env.run("logisticsRoute_('P1',{username:'admin'})"),/no tiene dirección/);
+});
+
+test('cuenta CLIENTE solo consulta proyectos asignados y no recibe planillas internas',()=>{
+ const env=sandboxBackend();
+ env.run("append_('proyecto',{id:'P1',numero:'PR1',cliente:'Cliente A',proyecto:'Fachada A'})");
+ env.run("append_('proyecto',{id:'P2',numero:'PR2',cliente:'Cliente B',proyecto:'Fachada B'})");
+ env.context.gantt={tasks:[
+  {id:'a',projectId:'P1',name:'Colocación',teamId:'T1',start:'2026-11-23',durationDays:2,notes:'COSTO INTERNO: 999',incidents:[]},
+  {id:'b',projectId:'P2',name:'Otro cliente',teamId:'T2',start:'2026-11-23',durationDays:1,incidents:[]}
+ ],sectors:[],projectMeta:{}};
+ env.context.capacity=sampleCapacity();
+ env.run("saveWorkspace_('projectGantt',gantt,0,{username:'admin'})");
+ env.run("saveWorkspace_('capacity',capacity,0,{username:'admin'})");
+ env.context.admin={username:'admin'};
+ env.context.clientUser={username:'cliente1',name:'Cliente Uno',role:'CLIENTE',active:true,password:'1',projectIds:'P1'};
+ env.run('saveUser_(clientUser,admin)');
+ const actor=env.run("publicUser_(all_('usuarios').find(u=>u.username==='cliente1'))");
+ env.context.clientActor=actor;
+ const list=env.run('clientList_(clientActor)');
+ assert.equal(list.length,1);assert.equal(list[0].id,'P1');
+ const view=env.run("clientProject_(clientActor,'P1')");
+ assert.equal(view.tasks.length,1);assert.equal(view.tasks[0].name,'Colocación');
+ assert.equal(view.tasks[0].notes,undefined);
+ assert.equal(JSON.stringify(view).includes('Otro cliente'),false);
+ assert.equal(JSON.stringify(view).includes('COSTO INTERNO'),false);
+ assert.equal(JSON.stringify(view).includes('members'),false);
+ assert.throws(()=>env.run("clientProject_(clientActor,'P2')"),/autorización/);
+});
+
+test('cliente autenticado no puede ejecutar bootstrap ni workspace.load',()=>{
+ const env=sandboxBackend();
+ env.run("append_('proyecto',{id:'P1',numero:'PR1',proyecto:'A'})");
+ env.context.actor={username:'admin'};
+ env.context.u={username:'cliente2',name:'Consulta',role:'CLIENTE',active:true,projectIds:'P1',password:'clave'};
+ env.run('saveUser_(u,actor)');
+ const access=env.run("login_('cliente2','clave')");
+ function post(action,other={}){
+  env.context.payload={postData:{contents:JSON.stringify({action,token:access.token,...other})}};
+  return JSON.parse(env.run('doPost(payload)').getContent());
+ }
+ const first=post('client.list');
+ assert.equal(first.ok,true);assert.equal(first.data.length,1);
+ for(const name of ['bootstrap','workspace.load','logistics.route','workspace.save']){
+  const out=post(name,{workspace:'projectGantt',projectId:'P1'});
+  assert.equal(out.ok,false);
+  assert.match(out.error,/solo puede acceder|permisos/i);
+ }
+ const denied=post('client.project',{projectId:'P2'});
+ assert.equal(denied.ok,false);
+ assert.match(denied.error,/autorización/);
+});
+
+test('incidencia interna no publica notas pero conserva jornada gris en Gantt del cliente',()=>{
+ const env=sandboxBackend();
+ env.run("append_('proyecto',{id:'P1',numero:'PR1',proyecto:'Colocación'})");
+ env.context.gantt={tasks:[{id:'T1',projectId:'P1',name:'Vidrios',start:'2026-11-23',teamId:'T1',durationDays:2,
+  incidents:[{date:'2026-11-23',reason:'personal',note:'Empleado enfermo',published:false},{date:'2026-11-24',reason:'clima',note:'Lluvia',published:true}]}],sectors:[],projectMeta:{}};
+ env.context.capacity=sampleCapacity();
+ env.run("saveWorkspace_('projectGantt',gantt,0,{username:'admin'})");
+ env.run("saveWorkspace_('capacity',capacity,0,{username:'admin'})");
+ env.context.clientActor={username:'cliente',role:'CLIENTE',projectIds:'P1'};
+ const view=env.run("clientProject_(clientActor,'P1')");
+ assert.equal(view.tasks[0].incidents.length,2);
+ assert.equal(view.tasks[0].incidents[0].date,'2026-11-23');
+ assert.equal(view.tasks[0].incidents[0].published,false);
+ assert.equal(view.tasks[0].incidents[0].note,'');
+ assert.equal(view.tasks[0].incidents[1].note,'Lluvia');
+ assert.equal(JSON.stringify(view).includes('Empleado enfermo'),false);
+});
+
+test('setup migra encabezado de usuarios v1.2 sin eliminar cuentas',()=>{
+ const env=sandboxBackend();
+ const sh=env.sheets.get('usuarios');
+ env.run("append_('usuarios',{username:'juan',name:'Juan',role:'PLANIFICADOR',active:true})");
+ const before=sh.rows[1][5];
+ sh.rows[0]=sh.rows[0].slice(0,8);
+ env.run('setup()');
+ assert.equal(sh.rows[0][8],'projectIds');
+ assert.equal(sh.rows[1][5],before);
 });

@@ -1,5 +1,5 @@
 /**
- * ObraTiempo · Apps Script API (v1.2 · rutas de ida y persistencia compartida)
+ * ObraTiempo · Apps Script API (v1.3 · acceso cliente por obra y persistencia compartida)
  * Desplegar como Web App "Ejecutar como yo", acceso "Cualquier usuario".
  * Inicio de sesión propio: usuario + contraseña, token aleatorio en sesiones.
  * Cada acción valida token y rol desde Google Sheets, sin Google Login.
@@ -9,7 +9,7 @@
 const HEADERS_ = {
   proyecto:['id','numero','cliente','proyecto','estado','produccion','entrega','lider','inicio','inicioP','fechaEntrega','items','actualizado','localidad','grupo'],
   tiempo_obra:['projectId','value','unit','crewReference','outsourced','notes','updatedAt','updatedBy','address'],
-  usuarios:['email','name','role','active','createdAt','username','passwordSalt','passwordHash'],
+  usuarios:['email','name','role','active','createdAt','username','passwordSalt','passwordHash','projectIds'],
   sesiones:['tokenHash','username','expiresAt','createdAt'],
   calendario_laboral:['day','name','enabled','start','end','breakStart','breakEnd','target'],
   feriados:['date','label','kind','active','source'],
@@ -51,7 +51,7 @@ function setup() {
   if (!all_('configuracion').some(r=>r.key==='teamSize')) append_('configuracion',{key:'teamSize',value:'3'});
   Logger.log('Configurado: '+ss.getUrl());
 }
-function doGet() {return json_({ok:true, data:{app:'ObraTiempo API',status:'online',version:'1.2'}});}
+function doGet() {return json_({ok:true, data:{app:'ObraTiempo API',status:'online',version:'1.3'}});}
 function doPost(e) {
   try {
     if (!e || !e.postData || !e.postData.contents || e.postData.contents.length>11000000) throw Error('Solicitud inválida o demasiado grande.');
@@ -60,11 +60,15 @@ function doPost(e) {
     if(action==='auth.login')return json_({ok:true,data:login_(a.username,a.password)});
     const actor=authenticate_(a.token);
     if(action==='auth.logout')return json_({ok:true,data:logout_(a.token)});
+    // Un cliente nunca recibe bootstrap ni los workspaces con información de otras obras.
+    if(actor.role==='CLIENTE' && !['client.list','client.project'].includes(action))throw Error('Esta cuenta solo puede acceder al portal de clientes.');
     let data;
     switch(action) {
-      case 'bootstrap': data=bootstrap_(actor);break;
-      case 'workspace.load': data=loadWorkspace_(a.workspace);break;
-      case 'logistics.route': data=logisticsRoute_(a.projectId,actor);break;
+      case 'bootstrap': permit_(actor,['SUPERADMIN','ADMIN','PLANIFICADOR','LECTOR']);data=bootstrap_(actor);break;
+      case 'client.list': permit_(actor,['CLIENTE']);data=clientList_(actor);break;
+      case 'client.project': permit_(actor,['CLIENTE']);data=clientProject_(actor,a.projectId);break;
+      case 'workspace.load': permit_(actor,['SUPERADMIN','ADMIN','PLANIFICADOR','LECTOR']);data=loadWorkspace_(a.workspace);break;
+      case 'logistics.route': permit_(actor,['SUPERADMIN','ADMIN','PLANIFICADOR','LECTOR']);data=logisticsRoute_(a.projectId,actor);break;
       case 'workspace.save': permit_(actor,['SUPERADMIN','ADMIN','PLANIFICADOR']);data=saveWorkspace_(a.workspace,a.value,a.expectedRevision,actor);break;
       case 'estimate.save': permit_(actor,['SUPERADMIN','ADMIN','PLANIFICADOR']);data=saveEstimate_(a,actor);break;
       case 'calendar.save': permit_(actor,['SUPERADMIN','ADMIN']);data=saveWeek_(a.week);break;
@@ -101,11 +105,15 @@ function ensureSheet_(ss,name,headers) {
     // Migración aditiva de v0.2, sin borrar ni reordenar registros existentes.
     sheet.getRange(1,headers.length).setValue(headers[headers.length-1]);
   } else if (name==='usuarios' &&
+    headers.slice(0,-1).every((h,i)=>String(first[i])===h) && !String(first[headers.length-1]||'').trim()) {
+    // v1.3: ampliación aditiva de usuarios para vincular proyectos a cuentas cliente.
+    sheet.getRange(1,headers.length).setValue('projectIds');
+  } else if (name==='usuarios' &&
     HEADERS_.usuarios.slice(0,5).every((h,i)=>String(first[i])===h) &&
     HEADERS_.usuarios.slice(5).every((h,i)=>!first[i+5])) {
     // Actualización transparente de v0.1: conservar usuarios anteriores,
     // aunque deberán recibir username y contraseña antes de iniciar sesión.
-    sheet.getRange(1,6,1,3).setValues([HEADERS_.usuarios.slice(5)]);
+    sheet.getRange(1,6,1,4).setValues([HEADERS_.usuarios.slice(5)]);
   } else if (headers.some((h,i)=>String(first[i])!==h)) throw Error('Encabezados de '+name+' no coinciden. No se modificó la hoja.');
   return sheet;
 }
@@ -145,7 +153,7 @@ function hashPassword_(password,salt) {
   for(let i=0;i<3000;i++)bytes=Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,bytes);
   return Utilities.base64EncodeWebSafe(bytes).replace(/=+$/,'');
 }
-function publicUser_(u) {return {username:u.username,name:u.name,role:u.role,active:u.active,createdAt:u.createdAt};}
+function publicUser_(u) {return {username:u.username,name:u.name,role:u.role,active:u.active,createdAt:u.createdAt,projectIds:String(u.projectIds||'')};}
 function active_(u) {return u.active===true || String(u.active).toLowerCase()==='true';}
 function login_(username,password) {
   username=String(username||'').trim().toLowerCase();
@@ -189,6 +197,51 @@ function bootstrap_(actor) {
     teamSize:Number((config.find(x=>x.key==='teamSize') || {}).value)||3,
     sourceSheetId:(config.find(x=>x.key==='sourceSheetId')||{}).value||''
   };
+}
+/** Información mínima del cliente, filtrada en servidor a partir del usuario autenticado.
+ * No exponer hojas completas, personal, tiempos de obra, costos ni rutas de transporte.
+ */
+function clientAllowedIds_(actor){
+ return String(actor.projectIds||'').split(',').map(v=>v.trim()).filter(Boolean);
+}
+function clientList_(actor){
+ const ids=new Set(clientAllowedIds_(actor));
+ return all_('proyecto').filter(p=>ids.has(String(p.id))).map(p=>({
+  id:String(p.id),numero:String(p.numero||''),proyecto:String(p.proyecto||''),
+  cliente:String(p.cliente||''),estado:String(p.estado||'')
+ }));
+}
+function clientProject_(actor,projectId){
+ const id=String(projectId||'');
+ // Validar ANTES de consultar documentos o demás hojas.
+ if(!clientAllowedIds_(actor).includes(id))throw Error('No tenés autorización para consultar esa obra.');
+ const project=clientList_(actor).find(p=>p.id===id);
+ if(!project)throw Error('La obra ya no está disponible.');
+ const document=loadWorkspace_('projectGantt').value||{tasks:[],sectors:[]};
+ const taskEntries=(document.tasks||[]).filter(t=>String(t.projectId)===id);
+ const taskIds=new Set(taskEntries.map(t=>String(t.id)));
+ const tasks=taskEntries.map(t=>({
+  id:String(t.id),projectId:id,name:String(t.name||''),
+  sectorId:String(t.sectorId||''),teamId:String(t.teamId||''),
+  start:String(t.start||''),end:String(t.end||''),durationDays:Number(t.durationDays)||1,
+  dependsOn:taskIds.has(String(t.dependsOn))?String(t.dependsOn):'',
+  status:String(t.status||'pendiente'),progress:Number(t.progress)||0,
+  skippedDays:(t.skippedDays||[]).filter(d=>/^\d{4}-\d{2}-\d{2}$/.test(d)),
+  // Notas internas no se publican. Solo las incidencias marcadas como compartibles.
+  incidents:(t.incidents||[]).map(i=>i.published===true
+   ?{date:i.date,reason:i.reason,note:String(i.note||''),published:true}
+   :{date:i.date,reason:'no_publicada',note:'',published:false}),
+  reprogramHistory:(t.reprogramHistory||[]).filter(i=>i.published===true).map(i=>({at:i.at,from:i.from,to:i.to,reason:i.reason,note:String(i.note||''),published:true}))
+ }));
+ const sectors=(document.sectors||[]).filter(s=>String(s.projectId)===id).map(s=>({id:s.id,projectId:id,name:s.name}));
+ const teamIds=new Set(tasks.map(t=>t.teamId));
+ const capacity=loadWorkspace_('capacity').value||{};
+ const teams=(capacity.teams||[]).filter(t=>teamIds.has(String(t.id))).map(t=>({id:t.id,name:t.name,color:t.color}));
+ const specialDays=(capacity.specialDays||[]).filter(d=>teamIds.has(String(d.teamId))&&(!d.projectId||String(d.projectId)===id))
+  .map(d=>({date:d.date,teamId:d.teamId,projectId:d.projectId||'',hours:d.hours,enabled:d.enabled}));
+ const recesses=all_('recesos').filter(r=>!r.projectId||String(r.projectId)===id)
+  .map(r=>({start:r.start,end:r.end,projectId:r.projectId}));
+ return {project,tasks,sectors,teams,specialDays,calendar:{week:all_('calendario_laboral'),holidays:all_('feriados').map(h=>({date:h.date,active:h.active,label:h.label})),recesses}};
 }
 function saveEstimate_(a,actor) {
   const e=a.estimate || {};const projectId=String(e.projectId || '');
@@ -251,7 +304,7 @@ function saveUser_(u,actor) {
   if(!u)throw Error('Faltan datos de usuario');
   const username=String(u.username||'').trim().toLowerCase();
   if(!validUsername_(username))throw Error('Usuario inválido. Usá entre 3 y 32 letras, números, puntos, guiones o guiones bajos.');
-  if(!['SUPERADMIN','ADMIN','PLANIFICADOR','LECTOR'].includes(u.role))throw Error('Rol inválido.');
+  if(!['SUPERADMIN','ADMIN','PLANIFICADOR','LECTOR','CLIENTE'].includes(u.role))throw Error('Rol inválido.');
   const users=all_('usuarios');
   const old=users.find(x=>x.username===username);
   if(old && old.role==='SUPERADMIN' && (u.role!=='SUPERADMIN'||!u.active) && users.filter(x=>x.role==='SUPERADMIN'&&active_(x)).length===1)throw Error('No se puede desactivar el último superadministrador.');
@@ -261,10 +314,14 @@ function saveUser_(u,actor) {
   if((!old || pass) && (pass.length<1 || pass.length>200))throw Error('La contraseña debe tener entre 1 y 200 caracteres.');
   const passwordSalt=pass?Utilities.getUuid()+'-'+Utilities.getUuid():(old?.passwordSalt||'');
   const passwordHash=pass?hashPassword_(pass,passwordSalt):(old?.passwordHash||'');
-  upsert_('usuarios','username',{email:old?.email||'',username,name:String(u.name||username).slice(0,120),role:u.role,active:!!u.active,createdAt:old?.createdAt||now_(),passwordSalt,passwordHash});
+  const requested=String(u.projectIds||'').split(',').map(x=>x.trim()).filter(Boolean);
+  const validIds=new Set(all_('proyecto').map(project=>String(project.id)));
+  if(u.role==='CLIENTE' && (!requested.length||requested.some(id=>!validIds.has(id))))throw Error('Para el cliente elegí al menos una obra válida.');
+  const projectIds=u.role==='CLIENTE'?[...new Set(requested)].join(','):'';
+  upsert_('usuarios','username',{email:old?.email||'',username,name:String(u.name||username).slice(0,120),role:u.role,active:!!u.active,createdAt:old?.createdAt||now_(),passwordSalt,passwordHash,projectIds});
   // Cambiar clave o desactivar usuario invalida sus sesiones anteriores.
   if(old && (pass || !u.active))replaceAll_('sesiones',all_('sesiones').filter(s=>s.username!==username));
-  return publicUser_({username,name:String(u.name||username).slice(0,120),role:u.role,active:!!u.active,createdAt:old?.createdAt||now_()});
+  return publicUser_({username,name:String(u.name||username).slice(0,120),role:u.role,active:!!u.active,createdAt:old?.createdAt||now_(),projectIds});
 }
 function getConfig_(key) {const found=all_('configuracion').find(x=>x.key===key);return found?found.value:'';}
 function importSheet_(id,name,actor) {

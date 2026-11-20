@@ -25,14 +25,17 @@ export function intervalCapacity({start,end,teamId,projectId,members=[],absences
   return total;
 }
 export function progressOverview(tasks=[]){
-  const hours=tasks.reduce((s,t)=>s+Math.max(0,Number(t.personHours)||0),0);
-  const done=tasks.reduce((s,t)=>s+Math.max(0,Number(t.personHours)||0)*Math.min(1,Math.max(0,(Number(t.progress)||0)/100)),0);
-  return {tasks:tasks.length,hours,done,percent:hours>0?Math.round(100*done/hours):0,finished:tasks.filter(t=>t.status==='finalizada').length};
+  // Gantt cliente: el avance global se pondera por jornadas, no por horas-persona.
+  // Compatibilidad v1.2: las tareas antiguas sin durationDays conservan su ponderación.
+  const weight=t=>Math.max(0,Number(t.durationDays)||Number(t.personHours)||1);
+  const units=tasks.reduce((s,t)=>s+weight(t),0);
+  const done=tasks.reduce((s,t)=>s+weight(t)*Math.min(1,Math.max(0,(Number(t.progress)||0)/100)),0);
+  return {tasks:tasks.length,units,done,percent:units>0?Math.round(100*done/units):0,finished:tasks.filter(t=>t.status==='finalizada').length};
 }
 export function validateTaskDates(previous,next,today=dateISO(new Date())){
   if(!next.name?.trim()||!next.teamId||!next.start||!next.end)throw Error('Completá tarea, equipo, inicio y fin.');
   if(next.end<next.start)throw Error('El fin no puede ser anterior al comienzo.');
-  if(!(Number(next.personHours)>0))throw Error('Ingresá las horas-persona estimadas.');
+  if(!(Number(next.durationDays)>0) && !(Number(next.personHours)>0))throw Error('Ingresá las jornadas necesarias.');
   if(!Number.isFinite(Number(next.progress))||Number(next.progress)<0||Number(next.progress)>100)throw Error('El avance debe estar entre 0 y 100%.');
   if(previous?.start && previous.start<today && (next.start!==previous.start||next.end!==previous.end||next.teamId!==previous.teamId))throw Error('No se pueden mover fechas ni equipo de una tarea histórica. Podés actualizar su avance.');
   return true;

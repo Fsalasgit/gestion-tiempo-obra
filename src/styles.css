@@ -117,3 +117,11 @@ select:focus-visible, textarea:focus-visible {
 .estimate-saved-notice{display:flex;align-items:center;gap:9px;margin:0 0 14px;padding:12px 13px;border:1px solid #c6e5d9;background:#f0faf5;color:#156b4a;border-radius:10px;font-size:12px;font-weight:750;line-height:1.5}
 .estimate-form-actions{display:grid;gap:9px}
 .edit-panel input:disabled,.edit-panel select:disabled,.edit-panel textarea:disabled{background:#f5f5f6;color:#60646d;opacity:1;cursor:default}
+
+/* v1.3 · gestión de clientes por proyecto */
+.client-access-editor{width:100%;background:#fff8f9;border:1px solid #f1d9dd;padding:15px;border-radius:10px;display:flex;flex-direction:column;gap:8px}
+.client-access-editor strong{font-size:12px}.client-access-editor p,.client-access-editor small{font-size:11px;color:#6d717b;line-height:1.5;margin:0}
+.client-access-editor>input{min-height:38px;padding:9px 11px;border:1px solid #e0e1e6;border-radius:8px;max-width:470px}
+.client-access-list{max-height:220px;overflow:auto;border:1px solid #eee;border-radius:8px;background:#fff;max-width:800px}
+.client-access-list label{display:flex;align-items:center;gap:9px;padding:9px 11px;border-bottom:1px solid #eee;font-size:11px;cursor:pointer}
+.client-access-list label input{accent-color:#c9233b}.client-access-editor a{color:#bd2239;font-weight:700}

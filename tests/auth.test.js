@@ -17,8 +17,9 @@ function makeBackend(){
       newBlob:input=>({getBytes:()=>[...Buffer.from(input)]}),
       getUuid:randomUUID
     },
+    SpreadsheetApp:{openById:()=>({})},
     CacheService:{getScriptCache:()=>({get:key=>cache.get(key),put:(key,val)=>cache.set(key,val),remove:key=>cache.delete(key)})},
-    PropertiesService:{getScriptProperties:()=>({getProperty:name=>name==='SUPERADMIN_USERNAME'?'admin':null})}
+    PropertiesService:{getScriptProperties:()=>({getProperty:name=>name==='SUPERADMIN_USERNAME'?'admin':name==='SPREADSHEET_ID'?'TEST_SHEET':null})}
   });
   vm.runInContext(code+`\nfunction all_(name){return __db[name]||[];}\nfunction append_(name,obj){__db[name].push({...obj});}\nfunction replaceAll_(name,rows){__db[name]=rows;}\nfunction deleteBy_(name,key,id){__db[name]=__db[name].filter(r=>r[key]!==id);return {deleted:true};}`,context);
   context.__db=db;

@@ -36,3 +36,10 @@ test('una obra que desaparece del origen no aumenta la demanda y una tercerizada
  ];
  assert.equal(projectSummary(projects,estimates).personHours,20);
 });
+
+test('el Gantt abre sin proyecto seleccionado o cuando desaparece del catálogo',()=>{
+ assert.equal(effectiveStart(undefined),'');
+ assert.equal(effectiveStart(null),'');
+ assert.equal(effectiveStart({}),'');
+ assert.equal(effectiveStart({inicioP:'2026-12-04'}),'2026-12-04');
+});

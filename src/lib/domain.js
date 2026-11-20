@@ -26,7 +26,7 @@ export function toISODate(input) {
   if (m) return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
   return '';
 }
-export const effectiveStart = p => toISODate(p.inicio) || toISODate(p.inicioP);
+export const effectiveStart = p => toISODate(p?.inicio) || toISODate(p?.inicioP);
 export const sortProjects = projects => [...projects].sort((a,b) =>
   (effectiveStart(a) || '9999-12-31').localeCompare(effectiveStart(b) || '9999-12-31') || String(a.numero).localeCompare(String(b.numero))
 );
@@ -50,11 +50,17 @@ export function isDateBlocked(date, holidays=[], recesses=[], projectId='') {
   const d=toISODate(date);
   return holidays.some(h=>h.date===d && h.active!==false) || recesses.some(r=>r.start<=d && d<=r.end && (!r.projectId || String(r.projectId)===String(projectId)));
 }
-export function countDailyHours(date,week=WEEK,holidays=[],recesses=[],projectId='') {
+export function countDailyHours(date,week=WEEK,holidays=[],recesses=[],projectId='',specialDays=[],teamId='') {
   const d=toISODate(date); if(!d || isDateBlocked(d,holidays,recesses,projectId)) return 0;
   const dow = new Date(`${d}T12:00:00`).getDay();
-  return dailyCapacity(week.find(w=>Number(w.day)===dow));
+  // Excepción puntual del sábado para UN equipo; no habilita sábados futuros.
+  if(dow===6 && teamId){
+    const special=(specialDays||[]).find(item=>item.date===d && item.teamId===teamId);
+    if(special)return special.enabled===false?0:Math.max(0,Math.min(12,Number(special.hours)||0));
+  }
+  return dailyCapacity((week||WEEK).find(w=>Number(w.day)===dow));
 }
+
 export function projectSummary(projects,estimates) {
   const eligible=projects.filter(p=>!(/retiro\s+en\s+abalum/i).test(String(p.grupo||'')));
   const assigned = eligible.filter(p=>estimates.some(e=>String(e.projectId)===String(p.id)));

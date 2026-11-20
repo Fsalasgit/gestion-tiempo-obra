@@ -1,5 +1,5 @@
 /**
- * ObraTiempo · Apps Script API (v0.5)
+ * ObraTiempo · Apps Script API (v1.2 · rutas de ida y persistencia compartida)
  * Desplegar como Web App "Ejecutar como yo", acceso "Cualquier usuario".
  * Inicio de sesión propio: usuario + contraseña, token aleatorio en sesiones.
  * Cada acción valida token y rol desde Google Sheets, sin Google Login.
@@ -16,7 +16,9 @@ const HEADERS_ = {
   recesos:['id','start','end','projectId','note'],
   eventos_calendar:['id','projectId','date','start','end','people','title','calendarId','actor','createdAt'],
   importaciones:['id','sourceSpreadsheetId','sheetName','importedAt','projects','items','actor'],
-  configuracion:['key','value']
+  configuracion:['key','value'],
+  workspace_meta:['workspace','revision','parts','checksum','updatedAt','updatedBy'],
+  workspace_chunks:['workspace','revision','part','content']
 };
 const DEFAULT_WEEK_ = [
   [1,'Lunes',true,'08:00','14:00','','',6],
@@ -49,7 +51,7 @@ function setup() {
   if (!all_('configuracion').some(r=>r.key==='teamSize')) append_('configuracion',{key:'teamSize',value:'3'});
   Logger.log('Configurado: '+ss.getUrl());
 }
-function doGet() {return json_({ok:true, data:{app:'ObraTiempo API',status:'online',version:'0.5'}});}
+function doGet() {return json_({ok:true, data:{app:'ObraTiempo API',status:'online',version:'1.2'}});}
 function doPost(e) {
   try {
     if (!e || !e.postData || !e.postData.contents || e.postData.contents.length>11000000) throw Error('Solicitud inválida o demasiado grande.');
@@ -61,6 +63,9 @@ function doPost(e) {
     let data;
     switch(action) {
       case 'bootstrap': data=bootstrap_(actor);break;
+      case 'workspace.load': data=loadWorkspace_(a.workspace);break;
+      case 'logistics.route': data=logisticsRoute_(a.projectId,actor);break;
+      case 'workspace.save': permit_(actor,['SUPERADMIN','ADMIN','PLANIFICADOR']);data=saveWorkspace_(a.workspace,a.value,a.expectedRevision,actor);break;
       case 'estimate.save': permit_(actor,['SUPERADMIN','ADMIN','PLANIFICADOR']);data=saveEstimate_(a,actor);break;
       case 'calendar.save': permit_(actor,['SUPERADMIN','ADMIN']);data=saveWeek_(a.week);break;
       case 'team.save': permit_(actor,['SUPERADMIN','ADMIN']);data=saveTeam_(a.teamSize);break;
@@ -105,8 +110,8 @@ function ensureSheet_(ss,name,headers) {
   return sheet;
 }
 function value_(x,key) {if(x instanceof Date)return Utilities.formatDate(x,TZ_,['start','end','breakStart','breakEnd'].includes(key)?'HH:mm':'yyyy-MM-dd');return x;}
-function all_(name) {
-  const sheet=ss_().getSheetByName(name);if(!sheet)throw Error('Ejecutar setup() antes de usar la app.');
+function all_(name, ss) {
+  const sheet=(ss||ss_()).getSheetByName(name);if(!sheet)throw Error('Ejecutar setup() antes de usar la app.');
   const last=sheet.getLastRow();if(last<2)return [];
   const headers=HEADERS_[name];
   return sheet.getRange(2,1,last-1,headers.length).getValues().map(row=>Object.fromEntries(headers.map((h,i)=>[h,value_(row[i],h)]))).filter(r=>Object.values(r).some(v=>v!=='' && v!==null));
@@ -174,13 +179,15 @@ function logout_(token) {
 }
 function permit_(actor,roles) {if(!roles.includes(actor.role))throw Error('No tenés permisos para esta acción.');}
 function bootstrap_(actor) {
-  const users=all_('usuarios');
+  // Abrir una sola vez el spreadsheet y leer cada pestaña una vez por petición.
+  const ss=ss_();
+  const config=all_('configuracion',ss);
   return {
-    actor,projects:all_('proyecto'),estimates:all_('tiempo_obra'),week:all_('calendario_laboral'),
-    holidays:all_('feriados'),recesses:all_('recesos'),events:all_('eventos_calendar'),
-    users:['SUPERADMIN','ADMIN'].includes(actor.role)?users.map(publicUser_):[],
-    teamSize:Number((all_('configuracion').find(x=>x.key==='teamSize') || {}).value)||3,
-    sourceSheetId:(all_('configuracion').find(x=>x.key==='sourceSheetId')||{}).value||''
+    actor,projects:all_('proyecto',ss),estimates:all_('tiempo_obra',ss),week:all_('calendario_laboral',ss),
+    holidays:all_('feriados',ss),recesses:all_('recesos',ss),events:all_('eventos_calendar',ss),
+    users:['SUPERADMIN','ADMIN'].includes(actor.role)?all_('usuarios',ss).map(publicUser_):[],
+    teamSize:Number((config.find(x=>x.key==='teamSize') || {}).value)||3,
+    sourceSheetId:(config.find(x=>x.key==='sourceSheetId')||{}).value||''
   };
 }
 function saveEstimate_(a,actor) {
@@ -333,4 +340,164 @@ function createCalendarEvent_(e,actor) {
   const event=cal.createEvent(title,beginning,finish,{description:'Proyecto '+project.numero+'\nEquipo asignado: '+(Number(e.people)||1)+'\nCreado por: '+actor.username});
   const row={id:event.getId(),projectId:String(e.projectId),date:e.date,start:e.start,end:e.end,people:Number(e.people)||1,title,calendarId:cal.getId(),actor:actor.username,createdAt:now_()};
   append_('eventos_calendar',row);return row;
+}
+
+
+/**
+ * Persistencia versionada de dos documentos operativos independientes:
+ *   capacity: equipos, miembros, bajas, excepciones de calendario y TP mensuales.
+ *   projectGantt: sectores, tareas, bloqueantes, avance e incidencias.
+ * Nunca se escribe sobre `proyecto`: esa pestaña se actualiza SOLO por importación.
+ *
+ * Un estado JSON se codifica como Base64URL y fracciona en celdas de 18.000
+ * caracteres para que ningún fragmento pueda interpretarse como fórmula. Se anexan primero
+ * todos los fragmentos y se actualiza la cabecera de versión AL FINAL, bajo lock.
+ * Si falla una escritura parcial, la versión anterior sigue siendo legible.
+ */
+const WORKSPACE_NAMES_=['capacity','projectGantt'];
+const WORKSPACE_CHUNK_CHARS_=18000;
+const WORKSPACE_MAX_CHARS_=1000000;
+function validateWorkspaceName_(name){
+ const key=String(name||'');
+ if(!WORKSPACE_NAMES_.includes(key))throw Error('Documento de planificación desconocido.');
+ return key;
+}
+function validateWorkspaceValue_(name,value){
+ if(!value||typeof value!=='object'||Array.isArray(value))throw Error('Estado de planificación inválido.');
+ const arrays=name==='capacity'
+  ?{teams:200,members:3000,absences:20000,supportShifts:20000,specialDays:20000,assignments:20000,blocks:30000}
+  :{tasks:30000,sectors:2000};
+ Object.keys(arrays).forEach(key=>{
+  if(!Array.isArray(value[key])||value[key].length>arrays[key])throw Error('Colección inválida o demasiado grande: '+key);
+  if(value[key].some(item=>!item||typeof item!=='object'||Array.isArray(item)))throw Error('Registro inválido en '+key);
+ });
+ if(name==='projectGantt'&&(!value.projectMeta||typeof value.projectMeta!=='object'||Array.isArray(value.projectMeta)))throw Error('Falta el detalle del proyecto.');
+ if(name==='capacity'){
+  ['teams','members','assignments','blocks'].forEach(key=>{
+   if(value[key].some(x=>String(x.id||'').length>130))throw Error('Identificador demasiado largo en '+key);
+  });
+ }
+}
+function splitWorkspace_(json){
+ const parts=[];
+ for(let pos=0;pos<json.length;){
+  let end=Math.min(json.length,pos+WORKSPACE_CHUNK_CHARS_);
+  // No cortar un par de sustitutos Unicode (emoji).
+  if(end<json.length&&/^[\uD800-\uDBFF]$/.test(json.charAt(end-1)))end--;
+  parts.push(json.slice(pos,end));pos=end;
+ }
+ return parts;
+}
+function readWorkspaceMeta_(name){
+ return all_('workspace_meta').find(x=>x.workspace===name)||null;
+}
+function loadWorkspace_(workspace){
+ const name=validateWorkspaceName_(workspace);
+ const meta=readWorkspaceMeta_(name);
+ if(!meta)return {workspace:name,revision:0,value:null,updatedAt:'',updatedBy:''};
+ const revision=Number(meta.revision),parts=Number(meta.parts);
+ if(!Number.isSafeInteger(revision)||revision<1||!Number.isInteger(parts)||parts<1||parts>100)throw Error('Metadatos de planificación dañados.');
+ const segments=all_('workspace_chunks').filter(r=>r.workspace===name&&Number(r.revision)===revision).sort((a,b)=>Number(a.part)-Number(b.part));
+ if(segments.length!==parts||segments.some((part,index)=>Number(part.part)!==index))throw Error('Faltan fragmentos del documento '+name+'. Se conserva la última versión publicada.');
+ const encoded=segments.map(s=>String(s.content)).join('');
+ const json=Utilities.newBlob(Utilities.base64DecodeWebSafe(encoded)).getDataAsString('UTF-8');
+ if(digest_(json)!==String(meta.checksum))throw Error('El documento '+name+' no pasó la verificación de integridad.');
+ return {workspace:name,revision,value:JSON.parse(json),updatedAt:meta.updatedAt||'',updatedBy:meta.updatedBy||''};
+}
+function saveWorkspace_(workspace,value,expectedRevision,actor){
+ const name=validateWorkspaceName_(workspace);
+ validateWorkspaceValue_(name,value);
+ const expected=Number(expectedRevision);
+ if(!Number.isSafeInteger(expected)||expected<0)throw Error('Se necesita la versión previa para guardar.');
+ const json=JSON.stringify(value);
+ if(!json||json.length>WORKSPACE_MAX_CHARS_)throw Error('El documento supera 1.000.000 de caracteres; dividí la planificación.');
+ // Base64URL neutraliza los caracteres que Sheets puede interpretar como fórmulas.
+ const encoded=Utilities.base64EncodeWebSafe(Utilities.newBlob(json).getBytes());
+ const chunks=splitWorkspace_(encoded);
+ if(chunks.length>100)throw Error('Documento demasiado grande.');
+ const lock=LockService.getScriptLock();
+ if(!lock.tryLock(30000))throw Error('La planificación está siendo actualizada por otro usuario. Reintentá.');
+ try{
+  const old=readWorkspaceMeta_(name),previous=old?Number(old.revision):0;
+  if(previous!==expected){
+   const err=Error('Otro usuario guardó una versión más reciente. Exportá tu borrador antes de actualizar desde el servidor.');
+   err.code='STALE_REVISION';err.currentRevision=previous;throw err;
+  }
+  const revision=previous+1,when=now_(),sh=ss_().getSheetByName('workspace_chunks');
+  const at=sh.getLastRow()+1,need=at+chunks.length-1;
+  if(sh.getMaxRows()<need)sh.insertRowsAfter(sh.getMaxRows(),need-sh.getMaxRows());
+  sh.getRange(at,1,chunks.length,4).setValues(chunks.map((part,i)=>[name,revision,i,part]));
+  SpreadsheetApp.flush(); // La versión vieja permanece apuntada hasta completar todos los fragmentos.
+  upsert_('workspace_meta','workspace',{
+   workspace:name,revision,parts:chunks.length,checksum:digest_(json),updatedAt:when,updatedBy:actor.username
+  });
+  SpreadsheetApp.flush();
+  return {workspace:name,revision,updatedAt:when,updatedBy:actor.username};
+ }finally{lock.releaseLock();}
+}
+/** Mantenimiento manual opcional: conserva las últimas 4 versiones por documento.
+ * Ejecutar desde el editor de Apps Script cuando workspace_chunks crezca demasiado.
+ */
+function compactWorkspaces(){
+ const lock=LockService.getScriptLock();if(!lock.tryLock(30000))throw Error('Operación de planificación en curso.');
+ try{
+  const versions=new Map(all_('workspace_meta').map(x=>[x.workspace,Number(x.revision)]));
+  const sh=ss_().getSheetByName('workspace_chunks');
+  const current=all_('workspace_chunks');
+  const keep=current.filter(x=>versions.has(x.workspace)&&Number(x.revision)>versions.get(x.workspace)-4);
+  const removed=current.length-keep.length;
+  if(removed){
+   const capacity=sh.getLastRow()-1;
+   sh.getRange(2,1,capacity,4).clearContent();
+   if(keep.length)sh.getRange(2,1,keep.length,4).setValues(keep.map(x=>[x.workspace,x.revision,x.part,x.content]));
+   SpreadsheetApp.flush();
+  }
+  Logger.log('Fragmentos eliminados: '+removed);
+  return {removed,kept:keep.length};
+ }finally{lock.releaseLock();}
+}
+
+
+/**
+ * Primer módulo de logística: solo ida desde la base hasta la dirección de tiempo_obra.
+ * Usa el servicio Maps de Apps Script (rutas DRIVE de automóvil), sin exponer una API key.
+ * NO es un motor de rutas para camiones ni verifica restricciones de altura/peso.
+ * El front calcula una llegada TEÓRICA según la velocidad del camión definida por el usuario.
+ */
+const LOGISTICS_BASE_='Avenida Siria 1633, San Miguel de Tucumán, Tucumán, Argentina';
+function logisticsRoute_(projectId,actor){
+ const id=String(projectId||'').trim();
+ if(!id||id.length>130)throw Error('Seleccioná una obra válida para calcular el recorrido.');
+ if(!all_('proyecto').some(p=>String(p.id)===id))throw Error('El proyecto ya no figura en el catálogo actualizado.');
+ const estimate=all_('tiempo_obra').find(e=>String(e.projectId)===id);
+ if(!estimate||!String(estimate.address||'').trim())throw Error('Esta obra no tiene dirección. Cargala en Tiempos de obra.');
+ const destinationRaw=String(estimate.address).trim();
+ if(destinationRaw.length>400)throw Error('La dirección supera el límite admitido.');
+ const project=all_('proyecto').find(p=>String(p.id)===id);
+ const destination=/\bargentina\b/i.test(destinationRaw)?destinationRaw:
+  destinationRaw+', '+(project.localidad?String(project.localidad).slice(0,80):'San Miguel de Tucumán, Tucumán')+', Argentina';
+ const cache=CacheService.getScriptCache();
+ const key='logistics:v1:'+digest_(LOGISTICS_BASE_+'\n'+destination).slice(0,36);
+ const saved=cache.get(key);
+ if(saved){const out=JSON.parse(saved);return Object.assign({},out,{cached:true});}
+ // Limitar consultas repetitivas en la misma hora por usuario; no afecta el caché.
+ const attemptsKey='logistics:count:'+digest_(String(actor.username||'unknown')).slice(0,35);
+ const attempts=Number(cache.get(attemptsKey)||'0');
+ if(attempts>=20)throw Error('Se alcanzó el límite de 20 rutas por hora para este usuario. Reintentá más tarde.');
+ cache.put(attemptsKey,String(attempts+1),3600);
+ const directions=Maps.newDirectionFinder()
+  .setOrigin(LOGISTICS_BASE_).setDestination(destination)
+  .setMode(Maps.DirectionFinder.Mode.DRIVING).setRegion('ar').setLanguage('es')
+  .getDirections();
+ const route=directions&&directions.routes&&directions.routes[0];
+ const leg=route&&route.legs&&route.legs[0];
+ if(!leg||!leg.distance||!Number.isFinite(Number(leg.distance.value)))throw Error('Google Maps no encontró un recorrido por carretera. Verificá la dirección de la obra.');
+ const distanceMeters=Number(leg.distance.value),drivingDurationSeconds=Number(leg.duration&&leg.duration.value);
+ if(distanceMeters<0||!Number.isFinite(drivingDurationSeconds)||drivingDurationSeconds<0)throw Error('Google Maps devolvió una ruta incompleta.');
+ const out={projectId:id,distanceMeters,drivingDurationSeconds,
+  originResolved:String(leg.start_address||LOGISTICS_BASE_).slice(0,350),
+  destinationResolved:String(leg.end_address||destination).slice(0,350),
+  source:'Apps Script Maps DirectionFinder (DRIVING)',cached:false};
+ cache.put(key,JSON.stringify(out),21600);
+ return out;
 }

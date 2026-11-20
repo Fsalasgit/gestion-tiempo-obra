@@ -1,6 +1,6 @@
 {
   "name": "gestion-tiempo-obras",
-  "version": "0.5.0",
+  "version": "1.2.0",
   "private": true,
   "type": "module",
   "scripts": {

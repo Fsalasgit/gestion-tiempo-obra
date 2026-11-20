@@ -1,66 +1,64 @@
-# Publicar ABALUM · ObraTiempo v0.4 en Vercel
+# Publicar ObraTiempo v1.2 · Vercel + Apps Script
 
-## 1. Verificar en tu computadora
+## 1. Actualizar el backend ANTES del frontend
+
+1. Conservá una copia del Google Sheets y del `Code.gs` actual.
+2. Abrí el mismo proyecto de Apps Script que usa tu aplicación.
+3. Reemplazá `Code.gs` con `backend/apps-script/Code.gs` de este ZIP.
+4. Ejecutá `setup()` desde el editor. Creará `workspace_meta` y `workspace_chunks` sin borrar `proyecto`, `tiempo_obra`, usuarios ni sesiones.
+5. Implementar → Gestionar implementaciones → lápiz → **Nueva versión** → Implementar.
+6. Conservá la URL `/exec` actual. Los servicios avanzados de Drive (para subir Excel) permanecen habilitados.
+
+Si solo subís React, verás «Acción desconocida: workspace.load» hasta actualizar el backend.
+
+## 2. Comprobar el frontend
 
 ```powershell
-Copy-Item .env.example .env
 npm install
 npm test
 npm run build
 ```
 
-No subir `.env`, `node_modules`, `dist` ni exportaciones privadas de proyectos. `.gitignore` ya los excluye parcialmente; revisá `git status` antes del commit.
-
-## 2. Subir repositorio a GitHub
-
-Ejecutar dentro de la carpeta que contiene `package.json` (no en su carpeta padre):
+Si los comandos terminan sin errores:
 
 ```powershell
-git init
 git add .
-git commit -m "ObraTiempo v0.4 - temática ABALUM"
-git branch -M main
-git remote add origin https://github.com/TU-USUARIO/TU-REPOSITORIO.git
-git push -u origin main
+git commit -m "ObraTiempo v1.2 - buscador y logistica de ida"
+git push
 ```
 
-Si el repositorio ya existe, NO repetir `git init` ni `remote add`: basta `git add .`, `git commit` y `git push`. Recomendamos **repositorio privado**, por tratarse de una app empresarial.
+Si Vercel está vinculado al repositorio hará el nuevo despliegue.
 
-## 3. Crear proyecto Vercel
+## 3. Variables Vercel
 
-1. Vercel → Add New → Project → Importar desde GitHub.
-2. Framework: **Vite** (React). Root Directory: carpeta del proyecto con `package.json` (si es la raíz del repositorio, dejar vacío o `./`).
-3. Build Command: `npm run build`. Output Directory: `dist`. Install Command: `npm install`. Node.js: 22 o compatible con `>=20.19.0`.
-4. Variables de entorno (Production):
+| Nombre | Valor | Dónde |
+|---|---|---|
+| `VITE_DEMO_MODE` | `false` | Build del frontend |
+| `APPS_SCRIPT_URL` | `https://script.google.com/macros/s/TU_ID/exec` | Entorno del servidor; NO lleva `VITE_` |
 
-   | Nombre | Valor | Observación |
-   |---|---|---|
-   | `VITE_DEMO_MODE` | `false` | Obliga al inicio de sesión real |
-   | `APPS_SCRIPT_URL` | `https://script.google.com/macros/s/ID/exec` | **Solo servidor**, nunca `VITE_APPS_SCRIPT_URL` |
+Framework: **Vite**. Build: `npm run build`. Output: `dist`. Root Directory: carpeta con `package.json`. El proxy ya está en `api/index.js` y `vercel.json`. No se necesita Google OAuth ni `VITE_GOOGLE_CLIENT_ID`.
 
-5. Deploy. Si agregaste variables después de un despliegue anterior, hacé **Redeploy** de la versión actual.
+## 4. Primera apertura / migración
 
-`vercel.json` ya configura `/api` → `api/index.js`, que retransmite llamadas al Apps Script sin exponer su URL al navegador. No se necesita `VITE_GOOGLE_CLIENT_ID`.
+Iniciá sesión, abrí Ocupación mensual y Gantt por proyecto. Si las hojas de planificación están vacías y tenías trabajo en el navegador anterior, se ofrece una importación manual. Descargá antes la copia local; **no importes una demo ficticia** a tu base real. Si ya hay planificación en Apps Script se descargará automáticamente para lectura.
 
-## 4. Apps Script
+Probá crear un equipo y una tarea de un proyecto de prueba. Esperá hasta ver **Guardado en Google Sheets**; recargá o abrí otro navegador y verificá que aparecen. Intentá una reprogramación y un sábado extraordinario. Si dos operadores modifican la misma versión, se mostrará un aviso para descargar el borrador y recuperar la última versión del servidor, sin perderla silenciosamente.
 
-- Conservar el `Code.gs` v0.3 actualizado y su despliegue activo.
-- En las Propiedades del script configurar `SPREADSHEET_ID` y usuarios como se indica en `README.md`. El ID de la hoja no va en Vercel.
-- El backend Apps Script debe verificar tokens y roles **en cada operación**; el frontend no es un control de seguridad.
-- Habilitar accesibilidad de la implementación web para el proxy según el modelo de autenticación elegido; si configurás la ejecución como propietario, Apps Script puede acceder a su hoja, pero la autenticación propia por token es indispensable.
+## 5. Precauciones
 
-## 5. Verificaciones posteriores
+- No subir `.env`, `.xls`, `.xlsx`, datos privados ni credenciales a GitHub. Usá un repositorio privado.
+- La pestaña `proyecto` es exclusivamente la fuente importada de Excel. Los Gantt no la editan.
+- `LECTOR` consulta, pero no guarda; Apps Script verifica roles y sesión.
+- La vista cliente es una vista previa autenticada, no un link público compartible.
+- `compactWorkspaces()` puede ejecutarse ocasionalmente desde Apps Script para reducir versiones viejas cuando crezca la hoja de fragmentos.
 
-- Abrir la URL de Vercel en ventana privada: debe aparecer **Usuario / Contraseña**, no entrar en demo.
-- Comprobar login, navegación, lectura de proyectos y subida de Excel con una cuenta de prueba.
-- Comprobar que se actualiza la hoja `proyecto` y que las estimaciones de `tiempo_obra` se conservan.
-- Cerrar sesión y verificar que el token ya no permite consultar datos.
-- La planificación de equipos, colaboradores y Gantt **sigue guardándose en localStorage por navegador**. Todavía no hay persistencia común entre usuarios, por lo que no debe presentarse como planificación sincronizada.
+## 6. Activar cálculo de kilómetros
 
-## Guía de color
+Esta versión incorpora la acción `logistics.route`; por lo tanto **actualizá `Code.gs` y publicá una nueva versión** de la implementación existente de Apps Script. Ejecutá `setup()` si no estaba actualizado (no borra datos). El servicio `Maps` ya viene incorporado en Apps Script: **no necesitás una nueva API key** para esta primera etapa. El primer uso puede requerir aceptar permisos de Google en el editor; las cuotas de Apps Script siguen aplicando.
 
-`src/styles.css`: variables `--abalum-*`. `src/capacity.css`: `--cap-*`. El rojo y grafito son aproximaciones visuales coherentes con la marca, no códigos validados contra su manual oficial.
+1. Cargá la dirección de destino en **Tiempos de obra** y guardala. Debe ser suficientemente precisa (calle, número, localidad y provincia cuando corresponda).
+2. Abrí **Ocupación mensual → Logística · camiones**.
+3. Elegí una obra, presioná «Calcular kilómetros de ida», definí velocidad del camión y hora de salida.
+4. Compará la dirección que encontró Google con la dirección real; abrí «Ver en Google Maps» para verificar el camino.
 
-## Versión 0.5 · luego del despliegue anterior
-
-Además de subir el frontend actualizado a GitHub/Vercel, reemplazar `backend/apps-script/Code.gs`, ejecutar `setup()` y crear una **nueva versión** de la implementación web de Apps Script: el backend ahora incluye `grupo` al final de `proyecto` y admite contraseñas desde un carácter (inseguro para producción). Volver a importar el Excel para precargar `Grupo`. Los nuevos cubitos y operarios auxiliares siguen siendo **una vista previa local**, no se comparten entre navegadores.
+**Limitación:** el kilometraje utiliza rutas generales de circulación automotor, no contempla prohibiciones de camiones. El tiempo de camión es una estimación por velocidad elegida, no un ETA de tránsito en vivo. Todavía no modifica la disponibilidad de los equipos.

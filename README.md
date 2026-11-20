@@ -1,146 +1,108 @@
-# ABALUM · ObraTiempo v0.4 — Ocupación de equipos y Gantt mensual
+# ABALUM · ObraTiempo v1.2 — Buscador de Gantt y logística de ida
 
-Aplicación React + JavaScript + Vite para analizar la capacidad de colocación por equipo. En esta versión se prioriza **UX y simulación local**, sin grabar las nuevas estructuras de personal o planificación en Google Sheets. Se conserva el backend Apps Script (con usuario, contraseña y token de sesión) para la próxima etapa.
+React 19 + JavaScript + Vite, Vercel como frontend/proxy `/api`, Apps Script como backend de usuario/contraseña/token, Google Sheets como almacenamiento. Identidad visual ABALUM (rojo, grafito y blanco de referencia). `proyecto` solo se actualiza al **importar un Excel** y nunca se edita desde la planificación.
 
-## Inicio rápido
+## Instalar y probar
 
-Requiere Node 20.19+.
-
-```bash
+```powershell
+Copy-Item .env.example .env
 npm install
-cp .env.example .env   # en PowerShell: Copy-Item .env.example .env
+npm test
+npm run build
 npm run dev
 ```
 
-Abrir http://localhost:5173. `VITE_DEMO_MODE=true` permite probar todas las pantallas sin credenciales ni Google Cloud. No se solicita `VITE_GOOGLE_CLIENT_ID`.
+Abrí `http://localhost:5173`. Con `VITE_DEMO_MODE=true` se usan únicamente ejemplos ficticios guardados en el navegador. **No pruebes persistencia remota en demo.**
 
-### Qué información es real y qué no
+Para conectar realmente el frontend, en Vercel configurá:
 
-- **Archivo Excel 19/11/2026 (análisis de importación):** 1.963 registros de proyectos más una fila final de resumen, 28 columnas. Excluidos `Terminado` (1.828) y `Cancelado` (33): **102 proyectos activos / no cerrados** al importarlo. **No se incluye el Excel privado ni sus 102 registros en el bundle publicado**. Estados de las 102 obras: `Ejecucion` 43, `Aprobado` 30, `Tecnica` 12, `Solicitado` 10, `Planificacion` 4, `Planificacion C` 2 y `Pausa Cliente M` 1.
-- **Escenario UX:** las 6 obras iniciales, las estimaciones, nombres de 5 colaboradores, 2 equipos, fechas de asignación y porcentajes son **ficticios**. No son cargas confirmadas de la empresa ni deben presentarse como una proyección real para Gerencia. Sustituir antes de emitir un reporte definitivo.
-- Las estimaciones de ejemplo se identifican con `example: true` y texto `VALORES DE EJEMPLO`.
-- Los cambios de planificación (`equipos`, `colaboradores`, `ausencias`, `asignaciones`) se guardan solamente en `localStorage` bajo `obras-capacidad-ux-v3`. En demo, los tiempos y el catálogo de proyectos también son locales (`obras-tiempo-demo-v3`). Utilizar **Restablecer ejemplo** para recuperar escenario de planificación original.
-- **Privacidad:** la v0.4 elimina el catálogo de obras reales del código fuente y lo sustituye por 6 obras ficticias. Para producción usá `VITE_DEMO_MODE=false` y consumí la hoja real desde Apps Script autenticado; no publiques futuras exportaciones de Excel dentro de `src/`.
-
-## Importar archivo actualizado
-
-En **Proyectos**, seleccioná `.xls` o `.xlsx` y pulsá `Actualizar vista previa`.
-
-El navegador lee el Excel sin modificar Google Sheets. Detecta automáticamente los dos formatos conocidos:
-
-| Campo de ObraTiempo | Excel 19/11 (28 columnas) | Excel anterior (48 columnas) |
-|---|---|---|
-| `id` | `Numero` | `Project ID` o `Numero` |
-| `numero` | `Numero` | `Numero` |
-| `proyecto` | `Nombre` | `Proyecto` |
-| `estado` | `Estado` | `PR - Estado` |
-| `inicioP` | `Inicio P.` | `Inicio P.` |
-| `inicio` | `Inicio` | `Inicio` |
-| `fechaEntrega` | `Fin P.` | `Fec Entrega` |
-| `produccion` | `Producido` | `Produccion` |
-| `entrega` | `Entrega` | `Entrega` |
-| `lider` | `Lider Proyecto` | `Lider de Proyecto` |
-| `localidad` | `Localidad Proyecto` | si existe |
-
-Se excluyen estados `Terminado`, `Cancelado`, `Finalizado`, `Cerrado`, `Anulado`, `Completado`, etc. **No** se infiere cierre a partir de `Producido` ni `Entrega`, pues son estados distintos. Las filas sin número y nombre se descartan, incluida la de totales. El catálogo se **reemplaza** solo tras la importación; las estimaciones quedan en otra estructura, conservadas por `projectId`. No existe un botón de edición de proyectos.
-
-**Modo conectado (más adelante):** el backend admite subir archivo desde la pantalla (`project.uploadExcel`) o importar una fuente Google Sheet. Para subir Excel, se requiere el servicio avanzado **Drive API v3** en Apps Script. `setup()` mantiene la pestaña `proyecto` como espejo reemplazable. El importador del backend también fue adaptado para el formato `Estado`/`Nombre`/`Numero`. 
-
-## Reglas de capacidad (actuales en la vista previa)
-
-- Cada estimación se ingresa en **Tiempos de obra**, por **2 personas**. Horas-persona = horas previstas × 2; si se carga en días, 1 día convencional = 6 horas por persona. Este día de estimación no reemplaza la capacidad real por calendario.
-- La capacidad diaria por persona es **6 horas lunes a jueves**, **5 horas viernes**, 0 sábado/domingo; admite cambios desde **Calendario laboral**, feriados y recesos.
-- Cada colaborador tiene equipo, tipo fijo/adicional, fecha de inicio, fecha de fin opcional y estado activo. Las **bajas** descuentan su capacidad diaria entre dos fechas. Un refuerzo temporal suma su capacidad únicamente en ese intervalo.
-- Cada asignación tiene proyecto, equipo, cantidad de personas planificadas y fecha de inicio. Se distribuye el esfuerzo en jornadas hábiles desde esa fecha; **las asignaciones no se bloquean entre sí**. Si coinciden en la jornada del mismo equipo, se suman, lo que permite mostrar **ocupaciones de más de 100%**. Las ausencias no eliminan el trabajo comprometido: únicamente bajan la capacidad.
-- La tercerización se marca en la estimación; **mantiene el dato y la referencia en el plan, pero no consume horas internas**. En esta versión se considera tercerización **completa** y no se distribuye parte del esfuerzo a terceros.
-- Ocupación mensual = horas-persona asignadas en el mes / horas-persona disponibles ese mes × 100. La barra no limita el porcentaje a 100; si supera el máximo se informa excedente y la columna mensual se tiñe de rojo. **No confundir** la carga total del backlog con trabajo programado en el mes.
-- Los días hasta fin de mes excluyen el día actual en días calendario; se muestra por separado la cantidad de jornadas con capacidad disponibles incluyendo hoy, si corresponde. Una jornada con vacaciones o feriado no cuenta.
-- Gantt mensual permite navegar libremente a otros meses, ver tareas simultáneas y el porcentaje de cada día. Permite modificar fecha o cuadrilla de cada obra desde **Asignaciones**.
-- La proyección no incluye viajes, dependencias, horas extras, materiales, tiempos de carga/descarga ni una promesa firme de finalización. Aún no distribuye partes de una obra entre dos equipos ni distingue tareas de diferentes tamaños de cuadrilla.
-
-## Ruta futura de logística (diseñada, todavía no automatizada)
-
-Salida: **Avenida Siria 1633, San Miguel de Tucumán, Tucumán, Argentina**. La **dirección exacta se carga junto con el tiempo de colocación**, no en el Excel de proyectos. Puede abrirse una ruta de referencia en Google Maps desde la app.
-
-Futuro flujo: base → obra A → obra B → retorno a base (o siguiente destino). Modelo previsto: guardar `transportes`, `tramos`, `equipo`, `origen`, `destino`, `distanciaKm`, `duracionDeRuta`, `velocidadReferencial`, `tiempoCargaDescarga`, `fecha`, `operarioAsignado`, `regreso`. La distancia **no debe calcularse en línea recta** ni inferirse desde velocidad. Google Maps Platform **Routes API** `computeRoutes` y `computeRouteMatrix` permite obtener metros y tiempos reales por carretera, sujetos a habilitar el servicio y su facturación. La velocidad configurada por el usuario (camión cargado, ruta) se utilizará en el cálculo operativo; no debe considerarse un límite legal de velocidad ni una recomendación de circulación. El traslado de personas/equipos descontará horas de la capacidad una vez implementado y validado.
-
-## Acceso simple con usuario + contraseña (backend existente)
-
-Para abandonar demo (`VITE_DEMO_MODE=false`): configurar `APPS_SCRIPT_URL`, `SPREADSHEET_ID` en Propiedades de secuencia de Apps Script y, solo durante el alta inicial, `SUPERADMIN_USERNAME` y `SUPERADMIN_PASSWORD` de 10+ caracteres. Ejecutar `setup()`, publicar Web App como propietario y conectar proxy. Apps Script crea cuenta, genera token de sesión para 30 días al autenticarse, comprueba permisos por rol y revoca el token al cerrar sesión. No hay OAuth Google Login. Conservamos `SUPERADMIN`, `ADMIN`, `PLANIFICADOR`, `LECTOR`.
-
-### Qué se guarda hoy en Apps Script vs qué es únicamente UX
-
-| Sección | Estado |
-|---|---|
-| `proyecto` al importar fuente | Backend preparado; requiere despliegue/validación real |
-| `tiempo_obra` (horas, días, tercerizado, dirección) | Backend preparado; requiere ejecución de `setup()` para agregar `address` a un esquema anterior |
-| `calendario_laboral`, `feriados`, `recesos`, `usuarios`, `sesiones` | Backend v0.2 conservado |
-| Equipos, colaboradores, ausencias, asignaciones y Gantt | **Solo navegador** hasta validar UX; sin endpoints de escritura todavía |
-| Cálculo de kilómetros, rutas y transporte | **Futuro**; solo abre Maps para consulta manual |
-
-## Pruebas
-
-```bash
-npm test
-npm run build
+```env
+VITE_DEMO_MODE=false
+APPS_SCRIPT_URL=https://script.google.com/macros/s/ID_DE_IMPLEMENTACION/exec
 ```
 
-Se verificaron en este entorno 19 pruebas de Node y la sintaxis del JSX, pero **no se pudo instalar los paquetes ni ejecutar la compilación Vite** por falta de conexión con el registro npm. Probar la compilación en tu computadora; antes de producción también validar importación `.xls` real y la API de Apps Script de punta a punta.
+`APPS_SCRIPT_URL` es una variable **del servidor Vercel**; jamás se utiliza `VITE_APPS_SCRIPT_URL`. El proxy `api/index.js` reenvía las solicitudes a Apps Script. No existe Google Login ni `VITE_GOOGLE_CLIENT_ID`.
 
-## Organización
+## Novedad: filtro «Obra completa»
 
-- `src/components/CapacityStudio.jsx`: UX de capacidad, Gantt, personal, asignaciones y logística futura.
-- `src/capacity.css`: interfaz nueva y responsive.
-- `src/lib/planner.js`: cálculos sin efectos secundarios (fechas, esfuerzo, personas y capacidad).
-- `src/lib/excelImport.js`: detección de ambos formatos de importación.
-- `src/lib/domain.js`: reglas básicas de cálculo de tiempos y calendario.
-- `src/lib/demo.js`: datos iniciales para recorrer la UX.
-- `src/data/demo-projects.json`: seis obras genéricas sin datos internos de clientes.
-- `src/data/scenario.js`: valores ficticios del ejemplo de dos equipos.
-- `CAMBIOS_v0.3.md`: checklist de lo nuevo y pruebas manuales recomendadas.
-- `backend/apps-script/Code.gs`: backend previo y mapeo del Excel actualizado.
-- `README_AI.md`: instrucciones para nuevas iteraciones.
+En **Gantt por proyecto**, el botón **Obra completa** muestra todos los días calendario desde la primera actividad registrada (primera jornada o incidencia) hasta el fin de la última tarea. No usa `Inicio` ni `Inicio P.` del Excel y **no extiende el fin hasta la fecha actual**. Los días no laborables aparecen en la línea de tiempo sin generar tareas; las franjas resumen de obra/sector son continuas entre su inicio y su fin.
 
-## Novedades v0.4: apariencia ABALUM y Vercel
+El filtro es exclusivo del Gantt por proyecto. Los controles anteriores (desde hoy, desde inicio, próximos 15/30 días y mes) siguen disponibles. Proyecto → Sectores → Tareas, más tareas generales sin sector. Una tarea tiene jornadas, equipo, bloqueante opcional, progreso declarado, fecha mínima, incidencias y observaciones. Lluvia registrada mantiene la jornada gris y desplaza las tareas futuras. La vista cliente **es solo lectura dentro de la aplicación, NO un enlace público**.
 
-- Temática ABALUM: rojo de referencia `#C9233B`, grafito `#1C1E22`, superficies blancas y gris claro `#F7F7F8`. No se afirma que los códigos sean los oficiales de marca.
-- Sidebar, acceso, botones, formularios, métricas y Gantt actualizados. Colores funcionales diferenciados: verde (capacidad), ámbar (atención), rojo tramado (sobrecarga), violeta (tercerizada).
-- Se eliminaron nombres de clientes/obras reales del bundle. En la demo hay seis ejemplos, y podés cargar tu Excel para visualizarlo localmente. Los proyectos reales en producción siguen viniendo de Apps Script.
-- Ver **`README_VERCEL.md`** antes de publicar. La aplicación debe desplegarse con `VITE_DEMO_MODE=false` y `APPS_SCRIPT_URL` configurado como secreto del servidor (sin prefijo `VITE_`).
-- La planificación sigue en localStorage: todavía NO se comparte entre usuarios ni se guarda en Apps Script.
+## Persistencia en Apps Script v1.1
 
-## v0.5 · Gantt por tareas / operarios auxiliares (UX)
+**Es obligatorio actualizar Apps Script para que la persistencia funcione.**
 
-### Qué cambia en el Gantt
+1. Abrí Apps Script y hacé una copia de seguridad del proyecto y del Google Sheets antes de cambiar el código.
+2. Reemplazá `Code.gs` por `backend/apps-script/Code.gs` de esta versión; mantené el `SPREADSHEET_ID` y las demás propiedades existentes.
+3. Guardá y ejecutá `setup()`. Crea **dos pestañas nuevas** (si no existen), conservando las anteriores:
+   - `workspace_meta`: identifica `capacity` y `projectGantt`, versión actual, integridad, fecha y usuario que guardó.
+   - `workspace_chunks`: estado JSON codificado por fragmentos para evitar fórmulas y el límite de texto por celda.
+4. **Implementar → Gestionar implementaciones → Editar → Nueva versión → Implementar.** Utilizá la implementación existente para conservar su URL `/exec`.
+5. Reiniciá el frontend y entrá con usuario/contraseña. Los módulos cargarán su última versión de Apps Script y mostrarán el indicador «Guardado en Google Sheets».
 
-- Cada cubito representa una tarea individual con `id`, proyecto, equipo, fecha, esfuerzo en **horas-persona**, personal previsto, personal registrado y estado.
-- Una obra puede tener muchos cubitos el mismo día o en fechas diferentes. En escritorio se arrastran los cubitos futuros a otros días. En teléfonos, se toca el cubito y se modifica la fecha en el inspector.
-- El **pasado es de solo lectura**. Una tarea ubicada en una fecha anterior que venga de la planificación previa se muestra como **«Pasada · sin confirmar»**, nunca como realizada automática. Los nombres de personas que trabajaron se guardan explícitamente al completar una tarea del día actual.
-- **Backlog:** una tarea futura puede quedar sin fecha por lluvia o pendiente. La carga deja de contabilizarse en una fecha específica, pero el trabajo pendiente sigue visible en la lista.
-- **Parcial:** al indicar cuántas horas-persona se ejecutaron hoy, el bloque original queda realizado con esa parte y se crea un bloque distinto para el saldo en backlog.
-- **Trabajo extra:** se pueden crear tareas de ajuste final o imprevistos en una obra con estimación, aun si toda su planificación inicial ya fue terminada.
-- Tocando el número del día en la cabecera del Gantt aparece debajo la **ocupación diaria de cada equipo**, incluyendo personas y auxiliares convocados para esa fecha. Se muestran porcentajes mayores al 100%.
-- Los proyectos cuyo campo `Grupo` sea **«Retiro en Abalum»** no se pueden asignar a colocación y no suman ocupación. No se borra ni modifica su registro de la hoja `proyecto`.
+### Qué se guarda y qué no
 
-### Gestión de equipos
+| Documento | Contenido compartido | Fuente |
+|---|---|---|
+| `capacity` | Equipos y colores, colaboradores, bajas, auxiliares, sábados especiales, asignaciones lineales, TP, backlog y reprogramaciones | Apps Script / Sheets |
+| `projectGantt` | Sectores, tareas generales y por sector, dependencias, incidencias, avance y observaciones | Apps Script / Sheets |
+| `proyecto` | Datos del catálogo y estado de obras | **Solo** importación Excel, como antes |
+| `tiempo_obra` | Estimaciones y direcciones | Se guarda por `estimate.save`, como antes |
+| Calendario/usuarios/feriados | Jornadas, recesos, acceso por token | APIs existentes |
 
-- Se puede editar el nombre de los equipos.
-- Se puede editar un colaborador, cambiarlo de equipo, dejarlo sin equipo o registrar una baja **efectiva desde hoy**. Las asignaciones de equipo anteriores se guardan en `teamHistory` y la salida de personal conserva su capacidad de fechas pasadas.
-- Se puede registrar personal **auxiliar de Producción** en una bolsa independiente. No suma capacidad a Colocación hasta convocarlo a un equipo en una fecha determinada.
-- Las ausencias nuevas solamente pueden cargarse desde el día actual en esta vista previa.
+Los dos documentos se guardan **por separado**. La selección del mes, la pestaña activa y los filtros son preferencias de visualización, no cambios compartidos. Un documento puede llegar a 1.000.000 de caracteres JSON; se serializa y guarda en bloques pequeños con verificación de integridad. `compactWorkspaces()` es un mantenimiento opcional desde Apps Script que conserva las últimas cuatro versiones y puede reducir las filas históricas.
 
-### Usuarios
+### Seguridad ante trabajos simultáneos
 
-- Desde «Usuarios → Editar / clave» el superadministrador puede indicar una **nueva contraseña**. En edición, dejar vacío conserva la clave anterior.
-- Se acepta una longitud mínima de **1 carácter** (solicitado para este prototipo) en el formulario **y también en Apps Script**. Es un criterio **inseguro para un despliegue de producción**: se recomienda exigir contraseñas robustas antes de habilitar usuarios reales en Internet.
-- El token de sesión continúa siendo generado y verificado por Apps Script. Cambiar una contraseña invalida las sesiones anteriores del usuario.
+- El frontend trabaja sin bloquear las pantallas: modifica la vista inmediatamente y guarda unos instantes después. El aviso distingue pendiente, guardando, guardado, error o conflicto.
+- Apps Script toma un `LockService` y exige `expectedRevision` para cada guardado. Una versión vieja se **rechaza** (`STALE_REVISION`); no se permite sobrescribir silenciosamente el trabajo de otro usuario.
+- Si aparece un conflicto: **Descargar borrador** antes de usar «Leer servidor». No hay fusión automática de cambios entre usuarios en esta etapa.
+- Si falla la red, el borrador se conserva en memoria mientras la pestaña siga abierta. Descargá una copia antes de cerrar; un fallo de red no significa que se haya guardado.
+- Solo `SUPERADMIN`, `ADMIN` y `PLANIFICADOR` pueden escribir. `LECTOR` puede consultar. El servidor valida el token y los permisos en cada solicitud. Las contraseñas y tokens no se almacenan dentro de los documentos de planificación.
+- La lectura periódica se hace en segundo plano y **no reemplaza datos locales pendientes**.
 
-### Migración del backend
+### Pasar datos que estaban en localStorage
 
-Como se agregó el campo `grupo` a la hoja `proyecto` y cambió la validación de contraseñas, es necesario actualizar `backend/apps-script/Code.gs`, ejecutar `setup()` una vez y **editar la implementación web creando una nueva versión**. `setup()` agrega la nueva cabecera `grupo` al final de la pestaña `proyecto` existente, sin alterar sus proyectos ni las estimaciones. Volvé a subir el Excel para completar ese campo.
+Al instalar v1.1 **no se copian automáticamente** las planificaciones anteriores: podrían ser datos de ejemplo. Cuando un documento remoto está vacío y se encuentra información local de v1.0, aparece una advertencia con **Descargar copia local** y **Importar datos locales**. Primero descargá la copia y revisá que no incluya escenarios ficticios; después importala **una sola vez** desde el navegador que tenga la planificación correcta. Si el documento remoto ya tiene datos, la importación automática permanece bloqueada para no borrarlos. Las claves históricas (`obras-capacidad-ux-v6`, `obras-gantt-proyectos-ux-v1`) no se eliminan.
 
-### Estado del producto
+## Reglas operativas a conservar
 
-**Planificación en localStorage por navegador, todavía no compartida entre usuarios**: no es un registro laboral auditado ni prueba de presencia efectiva en obra. El bloqueo del pasado y los registros de operarios son reglas de UX, no reglas de seguridad de servidor todavía. Antes de producción hay que llevar las tareas, historial de movimientos y asignaciones a un backend con permisos, concurrencia, control de fecha de servidor y auditoría inmutable.
+- Por defecto: lunes–jueves 6 horas puras por persona, viernes 5, sábado y domingo 0. Sábados habilitados **por equipo y fecha**; feriados/recesos prevalecen.
+- Una obra del grupo «Retiro en ABALUM» no necesita colocación; una obra tercerizada no consume horas internas.
+- En estimación el tiempo se carga para dos personas; horas-persona se ajustan según el equipo efectivo.
+- Asignación lineal coloca una sola obra por equipo/día y salta días ocupados; permite prolongar el plan al mes siguiente. La modalidad manual todavía muestra sobrecargas superiores al 100%.
+- Una TP pendiente derivada de una jornada incompleta se conserva en backlog hasta programarse, sin duplicar horas ni confirmar automáticamente ejecución.
+- **El Gantt de proyecto NO vuelve a sumar sus tareas al indicador de ocupación mensual**, para evitar duplicación del esfuerzo.
+- Las fechas pasadas no se mueven y el avance ejecutado debe declararse expresamente.
+- La distancia de ida se obtiene desde el servicio Maps de Apps Script al pulsar «Calcular». El tiempo de llegada del camión usa velocidad media estimada, no rutas específicas para camiones; todavía no se descuentan horas de traslado de la ocupación.
 
-Las tareas creadas por la migración desde v0.4 son una reconstrucción de lo **programado**, no datos de ejecución observada.
+## Estructura clave
+
+- `src/App.jsx`: sesión, catálogo, navegación y dos workspaces que permanecen montados al cambiar de pantalla.
+- `src/lib/useBackendWorkspace.js`: carga remota, guardado asincrónico en serie, revisión de versión, exportación, recuperación e importación manual de datos locales.
+- `src/lib/workspaceDefaults.js`: valores iniciales y lectura de versiones guardadas en localStorage.
+- `src/components/WorkspaceStatus.jsx`: estado visible de sincronización y conflictos.
+- `src/components/CapacityStudio.jsx`: ocupación y equipos; mes visible es local.
+- `src/components/ProjectGantt.jsx`: filtro Obra completa, sectores, tareas, dependencias e incidencias.
+- `src/lib/ganttRange.js`: generador de rangos; `full` exclusivo del proyecto.
+- `backend/apps-script/Code.gs`: `workspace.load`, `workspace.save`, `setup()`, permisos, revisión y fragmentación.
+- `tests/workspaceBackend.test.js`, `tests/ganttFullRange.test.js`: casos nuevos.
+- `README_AI.md`: convenciones y reglas para próximas iteraciones.
+- `README_VERCEL.md`: guía resumida de despliegue.
+
+## Validación de esta entrega
+
+`npm test`: **92 pruebas aprobadas** (negocio + backend simulado + Gantt completo). Revisión sintáctica de 26 archivos JS/JSX: sin errores. **No se pudo comprobar `npm run build` en este entorno** porque npm no logró descargar dependencias. Tampoco se desplegó ni se ejecutó Apps Script contra tu Google Sheets real; probá una cuenta y un proyecto de prueba antes de usarlo para informes definitivos de Gerencia.
+
+## Novedad v1.2: buscador y kilómetros reales de ida
+
+**Gantt por proyecto:** el selector de proyectos del Excel se reemplazó por un campo de búsqueda por número, nombre o cliente. Muestra hasta 12 coincidencias y admite navegación por teclado (flechas, Enter y Escape). Los sectores/tareas y la persistencia quedan iguales.
+
+**Logística → Camiones:** origen fijo `Avenida Siria 1633, San Miguel de Tucumán, Tucumán, Argentina`. La obra debe tener dirección guardada en `tiempo_obra` (pantalla **Tiempos de obra**). Al tocar **Calcular kilómetros de ida**, el frontend realiza `POST /api` con `action: "logistics.route"` y el `projectId` autenticado. Apps Script recupera la dirección desde la hoja y ejecuta `Maps.newDirectionFinder().setMode(DRIVING).getDirections()`; devuelve kilómetros de recorrido por carretera, duración de referencia para automóvil y dirección resuelta.
+
+Se muestran velocidades del camión: 30 km/h (cargado), 50 km/h (viaje largo) o personalizado entre 5 y 110 km/h; más demoras opcionales hasta 300 minutos. El frontend calcula la hora de llegada según la fecha/hora de salida elegida. Cambiar velocidad, demora o salida **no vuelve a consultar Google**. Hay caché de rutas de 6 horas y un límite por usuario de 20 rutas no cacheadas/hora, para cuidar cuotas. Si la dirección no se puede resolver se muestra error en la pantalla.
+
+**Precaución:** Apps Script Maps devuelve rutas de conducción genéricas, **no rutas con restricciones de altura, peso o acceso para camiones**. La duración del camión es *teórica* y no considera congestión dinámica, esperas, carga/descarga ni imprevistos. Confirmá siempre el destino resuelto y el trayecto en Google Maps antes de usarlo operativamente. De momento se calcula únicamente la **ida ABALUM → obra** y no se modifica la ocupación del equipo.
+
+**Backend:** para esta nueva acción sí hay que actualizar `Code.gs` y volver a publicar la implementación existente (ver `README_VERCEL.md`). No requiere crear ni exponer `VITE_GOOGLE_CLIENT_ID`, Google Login, claves de Routes API ni servicios avanzados adicionales; Maps es un servicio nativo de Apps Script, sujeto a las cuotas de Google. La hoja `proyecto` permanece sin modificaciones.

@@ -1,0 +1,18 @@
+
+.logistics-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px}
+.log-fields{display:grid;gap:16px}.log-fields label{display:flex;flex-direction:column;gap:7px;font-size:12px;font-weight:700;color:#444957}
+.log-fields select,.log-fields input{width:100%;font:inherit;font-size:12px;background:white;color:#262a33;border:1px solid #dfe1e8;padding:11px 12px;min-height:43px;border-radius:9px}
+.log-fields :is(select,input):focus-visible{outline:2px solid #c9233b;outline-offset:2px}
+.log-actions{display:flex;align-items:center;gap:9px;flex-wrap:wrap}.log-actions .cap-btn:disabled{opacity:.55;cursor:not-allowed}
+.log-destination{display:flex;flex-direction:column;gap:5px;padding:12px;background:#fafafb;border:1px solid #ececf0;border-radius:9px;font-size:12px}
+.log-destination small{font-size:10px;color:#7a7d89}.log-two-cols{display:grid;grid-template-columns:1fr 1fr;gap:11px}
+.log-results{margin-top:18px;display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.log-results>div:not(.log-detail){background:#f7f7f9;border-radius:10px;padding:13px;display:flex;flex-direction:column;gap:8px}
+.log-results small{font-size:10px;color:#757986}.log-results strong{font-size:23px;color:#c9233b;font-variant-numeric:tabular-nums}
+.log-results .log-arrival{grid-column:1/-1}.log-results .log-arrival strong{font-size:20px}
+.log-results .log-detail{grid-column:1/-1;display:flex;align-items:center;gap:8px;color:#565b66;font-size:11px;line-height:1.5}
+.log-results .log-resolved{grid-column:1/-1;line-height:1.5}
+.log-placeholder{margin-top:18px;padding:28px 15px;background:#f9f9fb;border-radius:9px;color:#7b7f88;text-align:center;font-size:12px}
+.log-disclaimer{font-size:11px;color:#6d707b;line-height:1.6;margin:16px 0 0}.log-error{background:#fff0f2;border-radius:8px;padding:12px;color:#a51d35;font-size:12px}
+@keyframes log-spin{to{transform:rotate(360deg)}}.log-spinner{animation:log-spin 1s linear infinite}
+@media(max-width:1000px){.logistics-grid{grid-template-columns:1fr}}@media(max-width:560px){.log-two-cols{grid-template-columns:1fr}.log-results{grid-template-columns:1fr}.log-results .log-arrival{grid-column:auto}}

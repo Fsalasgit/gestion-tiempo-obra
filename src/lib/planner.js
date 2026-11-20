@@ -27,8 +27,8 @@ export function activePeople(teamId,date,members=[],absences=[],supportShifts=[]
     return periods?.length?periods.some(h=>h.teamId===teamId&&dateInRange(date,h.start,h.end)):p.teamId===teamId;
   });
 }
-export function teamCapacity(teamId,date,members,absences,week,holidays,recesses=[],supportShifts=[]) {
-  const h=countDailyHours(date,week,holidays,recesses);
+export function teamCapacity(teamId,date,members,absences,week,holidays,recesses=[],supportShifts=[],specialDays=[]) {
+  const h=countDailyHours(date,week,holidays,recesses,'',specialDays,teamId);
   return activePeople(teamId,date,members,absences,supportShifts).length*h;
 }
 
@@ -51,7 +51,7 @@ export function scheduleAssignment(assignment,estimate,week,holidays,recesses,li
   return {days,end,total:hours,unplanned:Math.max(0,remaining),outsourced:false};
 }
 
-export function buildMonthPlan({month,projects=[],estimates=[],teams=[],members=[],absences=[],assignments=[],blocks=null,supportShifts=[],week,holidays=[],recesses=[],today=dateISO(new Date())}){
+export function buildMonthPlan({month,projects=[],estimates=[],teams=[],members=[],absences=[],assignments=[],blocks=null,supportShifts=[],specialDays=[],week,holidays=[],recesses=[],today=dateISO(new Date())}){
   const dates=monthDates(month), estimateById=new Map(estimates.map(e=>[String(e.projectId),e])), projectById=new Map(projects.map(p=>[String(p.id),p]));
   const scheduled=assignments.map(a=>({...a,project:projectById.get(String(a.projectId)),estimate:estimateById.get(String(a.projectId))})).filter(a=>a.project&&a.estimate);
   const computed=scheduled.filter(a=>!(/retiro\s+en\s+abalum/i).test(String(a.project?.grupo||'').normalize('NFD').replace(/[\u0300-\u036f]/g,''))).map(a=>{
@@ -62,7 +62,7 @@ export function buildMonthPlan({month,projects=[],estimates=[],teams=[],members=
   const teamDays=teams.map(team=>({
     ...team,
     dates:dates.map(date=>{
-      const capacity=teamCapacity(team.id,date,members,absences,week,holidays,recesses,supportShifts);
+      const capacity=teamCapacity(team.id,date,members,absences,week,holidays,recesses,supportShifts,specialDays);
       const load=Array.isArray(blocks)?blocks.filter(b=>b.teamId===team.id&&b.date===date&&b.status!=='backlog'&&scheduled.some(a=>a.id===b.assignmentId&&!isOutsourced(a.estimate)&&!(/retiro\s+en\s+abalum/i).test(String(a.project?.grupo||'')))).reduce((acc,b)=>acc+Number(b.personHours||0),0):computed.filter(a=>a.teamId===team.id).reduce((acc,a)=>acc+(a.schedule.days[date]||0),0);
       return {date,capacity,load,over:Math.max(0,load-capacity),people:activePeople(team.id,date,members,absences,supportShifts).length};
     })

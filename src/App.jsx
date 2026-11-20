@@ -1,4 +1,4 @@
-import React, {useCallback,useEffect,useMemo,useState} from 'react';
+import React, {useCallback,useEffect,useMemo,useRef,useState} from 'react';
 import {
   Activity,ArrowRight,BookOpen,CalendarDays,CalendarPlus,Check,ChevronDown,ChevronRight,
   CircleHelp,Clock3,CloudUpload,ExternalLink,FolderKanban,HardHat,LayoutDashboard,
@@ -10,12 +10,18 @@ import {
 } from './lib/domain.js';
 import {DEMO_DATA,isDemo,readDemo,saveDemo} from './lib/demo.js';
 import CapacityStudio from './components/CapacityStudio.jsx';
+import ProjectGantt from './components/ProjectGantt.jsx';
+import {useBackendWorkspace} from './lib/useBackendWorkspace.js';
+import {blankCapacity,demoCapacity,emptyProjectGantt,readLegacyCapacity,readLegacyProjectGantt,CAPACITY_STORAGE,PROJECT_GANTT_STORAGE} from './lib/workspaceDefaults.js';
+import {WorkspaceGate} from './components/WorkspaceStatus.jsx';
 import {previewExcelFile} from './lib/excelImport.js';
 import {request,readFileAsBase64} from './lib/api.js';
+import {readSyncCache,writeSyncCache,clearSyncCache,formatSyncTime,readSessionActor,writeSessionActor,clearSessionActor} from './lib/syncCache.js';
 import {isPickupProject} from './lib/workBlocks.js';
 
 const NAV=[
-  {id:'planning',label:'Capacidad y Gantt',icon:Activity},
+  {id:'planning',label:'Ocupación mensual',icon:Activity},
+  {id:'projectGantt',label:'Gantt por proyecto',icon:CalendarDays},
   {id:'dashboard',label:'Obras y avance',icon:LayoutDashboard},
   {id:'projects',label:'Proyectos',icon:FolderKanban},
   {id:'times',label:'Tiempos de obra',icon:Timer},
@@ -110,13 +116,27 @@ function Projects({data,actor,run,go,onEstimate}) {
 function Times({data,actor,run,selection,onSelect}) {
   const [term,setTerm]=useState('');const [estimate,setEstimate]=useState({value:'',unit:'horas',outsourced:false,address:'',notes:''});const [crew,setCrew]=useState(3);
   const [editing,setEditing]=useState(false);
+  const [formEditable,setFormEditable]=useState(true);
+  const [saving,setSaving]=useState(false);
   const sorted=useMemo(()=>sortProjects(data.projects).filter(p=>!isPickupProject(p)&&[p.numero,p.cliente,p.proyecto].some(v=>String(v||'').toLowerCase().includes(term.toLowerCase()))),[data.projects,term]);
   const chosen=data.projects.find(p=>String(p.id)===String(selection)&&!isPickupProject(p));
+  const savedEstimate=chosen?data.estimates.find(e=>String(e.projectId)===String(chosen.id)):null;
+  const draftFromSaved=old=>old?{value:String(old.value),unit:old.unit,outsourced:old.outsourced===true||String(old.outsourced)==='true',address:old.address||'',notes:old.notes||''}:{value:'',unit:'horas',outsourced:false,address:'',notes:''};
   useEffect(()=>{
     if(!chosen){setEditing(false);return;}
     const old=data.estimates.find(e=>String(e.projectId)===String(chosen.id));
-    setEstimate(old?{value:String(old.value),unit:old.unit,outsourced:old.outsourced===true||String(old.outsourced)==='true',address:old.address||'',notes:old.notes||''}:{value:'',unit:'horas',outsourced:false,address:'',notes:''});setEditing(true);
-  },[selection,data.estimates,chosen?.id]);
+    setEstimate(draftFromSaved(old));setEditing(true);setFormEditable(!old);setSaving(false);
+  },[selection,chosen?.id]); // No pisar el formulario mientras llega una sincronización del catálogo.
+  const saveEstimate=async e=>{
+    e.preventDefault();
+    if(!chosen||saving||!formEditable)return;
+    setSaving(true);
+    try{
+      const payload={...estimate,projectId:chosen.id,crewReference:2};
+      const ok=await run('estimate.save',{estimate:payload},state=>({...state,estimates:[...state.estimates.filter(x=>String(x.projectId)!==String(chosen.id)),payload]}),savedEstimate?'Cambios de la obra guardados.':'Tiempo de obra guardado.');
+      if(ok)setFormEditable(false);
+    }finally{setSaving(false);}
+  };
   const personHours=getPersonHours(estimate.value,estimate.unit);
   return <>
     <SectionHead eyebrow="ESTIMACIÓN DE ESFUERZO" title="Tiempos de obra" sub="Tiempo de colocación para dos personas. Las obras de retiro en ABALUM no se estiman."/>
@@ -125,35 +145,42 @@ function Times({data,actor,run,selection,onSelect}) {
       {!sorted.length&&<Empty title="Sin coincidencias" desc="Probá otra búsqueda."/>}
     </div></div>
     <div className="panel edit-panel">{editing&&chosen?<><div className="panel-heading"><div><span className="eyebrow">OBRA SELECCIONADA</span><h2>{chosen.proyecto}</h2><p>{chosen.numero} · {chosen.cliente}</p></div><button aria-label="Cerrar edición" className="icon-btn" onClick={()=>{onSelect('');setEditing(false);}}><X size={18}/></button></div>
-      <form onSubmit={e=>{e.preventDefault();run('estimate.save',{estimate:{...estimate,projectId:chosen.id,crewReference:2}},state=>({...state,estimates:[...state.estimates.filter(x=>String(x.projectId)!==String(chosen.id)),{...estimate,projectId:chosen.id,crewReference:2}]}),'Tiempo guardado.');}}>
+      <form onSubmit={saveEstimate}>
+        {savedEstimate&&!formEditable&&<div className="estimate-saved-notice" role="status"><Check size={17}/> Tiempo de obra registrado. Para modificarlo, seleccioná «Editar obra».</div>}
         <div className="inline-note"><UsersRound size={18}/> Equipo de referencia: <strong>2 personas</strong></div>
-        <div className="form-two"><label className="field">Cantidad de tiempo<input type="number" min="0.1" max="100000" step="0.1" required value={estimate.value} onChange={e=>setEstimate(v=>({...v,value:e.target.value}))} placeholder="Ej. 12"/></label><label className="field">Unidad<select value={estimate.unit} onChange={e=>setEstimate(v=>({...v,unit:e.target.value}))}><option value="horas">Horas</option><option value="dias">Días (6 h estándar)</option></select></label></div>
-        <label className="switch-line"><input type="checkbox" checked={!!estimate.outsourced} onChange={e=>setEstimate(v=>({...v,outsourced:e.target.checked}))}/><span><strong>Obra tercerizada</strong><small>No utiliza capacidad del equipo interno</small></span></label>
+        <div className="form-two"><label className="field">Cantidad de tiempo<input type="number" disabled={!formEditable||saving} min="0.1" max="100000" step="0.1" required value={estimate.value} onChange={e=>setEstimate(v=>({...v,value:e.target.value}))} placeholder="Ej. 12"/></label><label className="field">Unidad<select disabled={!formEditable||saving} value={estimate.unit} onChange={e=>setEstimate(v=>({...v,unit:e.target.value}))}><option value="horas">Horas</option><option value="dias">Días (6 h estándar)</option></select></label></div>
+        <label className="switch-line"><input type="checkbox" disabled={!formEditable||saving} checked={!!estimate.outsourced} onChange={e=>setEstimate(v=>({...v,outsourced:e.target.checked}))}/><span><strong>Obra tercerizada</strong><small>No utiliza capacidad del equipo interno</small></span></label>
         <label className="field">Dirección de colocación (se carga aquí, NO en el Excel)
-          <input type="text" maxLength="400" value={estimate.address||''} onChange={e=>setEstimate(v=>({...v,address:e.target.value}))} placeholder="Calle, altura, ciudad, provincia"/>
+          <input type="text" disabled={!formEditable||saving} maxLength="400" value={estimate.address||''} onChange={e=>setEstimate(v=>({...v,address:e.target.value}))} placeholder="Calle, altura, ciudad, provincia"/>
           {chosen.localidad&&<small className="muted block">Localidad indicada por el origen: {chosen.localidad}. Completá la dirección exacta para futura logística.</small>}
         </label>
         {estimate.address&&<a className="btn secondary" href={'https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(estimate.address+', Tucumán, Argentina')} target="_blank" rel="noopener noreferrer"><MapPin size={15}/> Ver dirección en Google Maps (consulta manual)</a>}
-        <label className="field">Observaciones<textarea rows="3" value={estimate.notes} onChange={e=>setEstimate(v=>({...v,notes:e.target.value}))} placeholder="Detalles del trabajo o condiciones especiales…"/></label>
+        <label className="field">Observaciones<textarea rows="3" disabled={!formEditable||saving} value={estimate.notes} onChange={e=>setEstimate(v=>({...v,notes:e.target.value}))} placeholder="Detalles del trabajo o condiciones especiales…"/></label>
         <div className="calc-card"><span className="eyebrow">CONVERSIÓN AUTOMÁTICA</span><div className="result-large">{formatNumber(personHours)} <small>horas-persona</small></div><div className="team-tabs"><span>Equipo de simulación</span><select value={crew} onChange={e=>setCrew(Number(e.target.value))}>{[1,2,3,4,5,6,7,8].map(n=><option value={n} key={n}>{n} {n===1?'persona':'personas'}</option>)}</select></div><div className="calc-result">Duración teórica con {crew} personas <b>{formatNumber(estimateCrewHours(estimate.value,estimate.unit,crew))} horas</b></div></div>
-        {canEdit(actor)&&<button className="btn primary full" type="submit" disabled={!Number(estimate.value)||Number(estimate.value)<=0}><Save size={17}/> Guardar tiempo de obra</button>}
+        {canEdit(actor)&&(!formEditable&&savedEstimate?
+          <button className="btn primary full" type="button" onClick={()=>setFormEditable(true)}><Save size={17}/> Editar obra</button>:
+          <div className="estimate-form-actions">
+            <button className="btn primary full" type="submit" disabled={saving||!Number(estimate.value)||Number(estimate.value)<=0}><Save size={17}/> {saving?'Guardando…':savedEstimate?'Guardar cambios':'Guardar tiempo de obra'}</button>
+            {savedEstimate&&<button className="btn secondary full" type="button" disabled={saving} onClick={()=>{setEstimate(draftFromSaved(savedEstimate));setFormEditable(false);}}>Cancelar edición</button>}
+          </div>)}
       </form></>:<div className="selection-placeholder"><div className="illustration-mark"><Timer size={40}/></div><h2>Elegí una obra</h2><p>Podrás indicar horas o días, calcular el esfuerzo para distintos tamaños de equipo y marcar si se terceriza.</p></div>}</div></div>
     <div className="panel margin-top"><div className="panel-heading"><div><h2>Resumen de estimaciones</h2><p>Tiempos guardados para cada obra.</p></div></div><ProjectTable projects={sortProjects(data.projects)} estimates={data.estimates} compact onEstimate={canEdit(actor)?(p)=>onSelect(p.id):null}/></div>
   </>;
 }
 function CalendarPage({data,actor,run}) {
   const [week,setWeek]=useState(data.week?.length?data.week:WEEK);
+  const [weekDirty,setWeekDirty]=useState(false);
   const [holiday,setHoliday]=useState({date:'',label:'',kind:'manual',active:true});
   const [recess,setRecess]=useState({start:'',end:'',projectId:'',note:''});
   const [event,setEvent]=useState({projectId:'',date:'',start:'08:00',end:'10:00',people:2});
   const [year,setYear]=useState(2026);
-  useEffect(()=>setWeek(data.week?.length?data.week:WEEK),[data.week]);
+  useEffect(()=>{if(!weekDirty)setWeek(data.week?.length?data.week:WEEK);},[data.week,weekDirty]);
   const cap=weeklyCapacity(week,data.teamSize);
-  const patch=(d,key,value)=>setWeek(prev=>prev.map(w=>Number(w.day)===Number(d)?{...w,[key]:value}:w));
+  const patch=(d,key,value)=>{setWeekDirty(true);setWeek(prev=>prev.map(w=>Number(w.day)===Number(d)?{...w,[key]:value}:w));};
   return <>
     <SectionHead eyebrow="DISPONIBILIDAD REAL" title="Calendario laboral" sub="Definí días, horarios, pausas, feriados y recesos. La capacidad se calcula con horas puras."/>
     <div className="metrics-grid two"><Metric icon={Clock3} label="Horas por persona" value={`${formatNumber(weeklyCapacity(week,1))} h`} hint="Semana sin feriados"/><Metric icon={UsersRound} label="Capacidad del equipo" value={`${formatNumber(cap)} h`} hint={`${data.teamSize} integrantes · sin ausencias individuales`} tone="green"/></div>
-    <div className="panel margin-top"><div className="panel-heading"><div><h2>Jornada semanal</h2><p>El tiempo de pausa no cuenta como trabajo productivo.</p></div>{canAdmin(actor)&&<button className="btn primary" onClick={()=>run('calendar.save',{week},state=>({...state,week}),'Jornada actualizada.')}><Save size={16}/> Guardar jornada</button>}</div><div className="table-wrap"><table className="week-table"><thead><tr><th>Día</th><th>Activo</th><th>Entrada</th><th>Salida</th><th>Inicio pausa</th><th>Fin pausa</th><th>Horas puras</th><th>Capacidad</th></tr></thead><tbody>{[...week].sort((a,b)=>(Number(a.day)||7)-(Number(b.day)||7)).map(w=>{
+    <div className="panel margin-top"><div className="panel-heading"><div><h2>Jornada semanal</h2><p>El tiempo de pausa no cuenta como trabajo productivo.</p></div>{canAdmin(actor)&&<button className="btn primary" onClick={async()=>{if(await run('calendar.save',{week},state=>({...state,week}),'Jornada actualizada.'))setWeekDirty(false);}}><Save size={16}/> Guardar jornada</button>}</div><div className="table-wrap"><table className="week-table"><thead><tr><th>Día</th><th>Activo</th><th>Entrada</th><th>Salida</th><th>Inicio pausa</th><th>Fin pausa</th><th>Horas puras</th><th>Capacidad</th></tr></thead><tbody>{[...week].sort((a,b)=>(Number(a.day)||7)-(Number(b.day)||7)).map(w=>{
       const enabled=w.enabled===true||String(w.enabled)==='true';
       const available=enabled?Math.max(0,Math.min(Number(w.target)||0,((timeMinutes(w.end)-timeMinutes(w.start))-(w.breakStart&&w.breakEnd?Math.max(0,timeMinutes(w.breakEnd)-timeMinutes(w.breakStart)):0))/60)):0;
       return <tr key={w.day}><td><strong>{w.name}</strong></td><td><input aria-label={'Activar '+w.name} type="checkbox" disabled={!canAdmin(actor)} checked={enabled} onChange={e=>patch(w.day,'enabled',e.target.checked)}/></td>{['start','end','breakStart','breakEnd'].map(k=><td key={k}><input aria-label={k+' '+w.name} className="time-input" type="time" disabled={!canAdmin(actor)||!enabled} value={w[k]||''} onChange={e=>patch(w.day,k,e.target.value)}/></td>)}<td><input aria-label={'Horas puras '+w.name} className="hours-input" type="number" min="0" step="0.5" disabled={!canAdmin(actor)||!enabled} value={Number(w.target)||0} onChange={e=>patch(w.day,'target',e.target.value)}/></td><td><strong>{formatNumber(available)} h</strong></td></tr>;
@@ -197,30 +224,100 @@ function Help({go}) {return <><SectionHead eyebrow="DOCUMENTACIÓN INTEGRADA" ti
     <h2>4. Calendario disponible</h2><p>La jornada base es de 6 horas puras de lunes a jueves y 5 los viernes: <b>29 horas por persona por semana</b>. El administrador modifica horarios y pausas. Los feriados bloqueados y los recesos generales o por obra descuentan disponibilidad.</p><p>La API de ArgentinaDatos permite precargar feriados hasta 2026, pero es una fuente <b>no oficial</b>. Todos pueden revisarse y los futuros cargarse manualmente.</p>
     <h2>5. Tercerización</h2><p>Una obra tercerizada conserva su tiempo estimado y su historial, pero <b>no consume capacidad interna</b> en la planificación. La fecha comprometida con el tercero se administrará en una etapa posterior.</p>
     <h2>6. Seguridad y Calendar</h2><p>Roles: SUPERADMIN, ADMIN, PLANIFICADOR y LECTOR. Apps Script valida usuario, token vigente y rol en cada solicitud. El token se guarda en el navegador durante 30 días o hasta cerrar sesión. Google Calendar crea eventos en el calendario configurado en Apps Script, sujeto a los días laborables y bloqueos.</p>
-    <h2>7. Capacidad y Gantt mensual (vista previa)</h2><p>La pantalla Capacidad y Gantt permite simular equipos, refuerzos, bajas, asignaciones simultáneas y tercerización, sin limitar la ocupación al 100%. Ocupación mensual = horas-persona programadas en el mes / capacidad disponible del mes. Las obras sin estimación o sin fecha de asignación no se incluyen todavía. La dirección se carga con el tiempo de colocación y no modifica la hoja proyecto. Personal y asignaciones se guardan localmente durante esta fase UX, no en Apps Script. Los kilómetros, traslados reales y fechas comprometidas se agregarán después.</p>
-    <h2>8. Cubitos, backlog y personal auxiliar (v0.5)</h2><p>Cada cubito es una tarea individual movible en el futuro. Lo que quedó programado en el pasado es solo lectura y no se supone ejecutado. Pueden crearse tareas extra y guardar saldos pendientes en backlog si llueve o se finaliza solo parcialmente. Tocá el día del Gantt para ver ocupación y personas de cada equipo. Los auxiliares de Producción se incorporan a Colocación únicamente en las fechas solicitadas. Las obras del grupo <b>Retiro en Abalum</b> quedan fuera de la planificación. Todo el módulo de tareas sigue guardado solo en el navegador y no está sincronizado con Apps Script.</p>
-    </div><div className="help-side"><div className="panel"><div className="panel-heading"><h2>Ruta recomendada</h2></div><div className="steps"><div><b>01</b><span>Importar proyectos</span></div><div><b>02</b><span>Estimar tiempo por obra</span></div><div><b>03</b><span>Definir equipo y jornadas</span></div><div><b>04</b><span>Cargar feriados y recesos</span></div><div><b>05</b><span>Crear eventos y planificar</span></div></div><button className="btn primary full" onClick={()=>go('projects')}>Ir a proyectos <ArrowRight size={16}/></button></div><div className="panel"><div className="panel-heading"><h2>Archivos del proyecto</h2></div><p className="muted">README.md explica el uso. README_AI.md contiene las convenciones técnicas para próximas modificaciones.</p><Pill tone="blue">React + Vite + Apps Script</Pill></div></div></div>
+    <h2>7. Capacidad y Gantt mensual (vista previa)</h2><p>La pantalla Capacidad y Gantt permite simular equipos, refuerzos, bajas, asignaciones simultáneas y tercerización, sin limitar la ocupación al 100%. Ocupación mensual = horas-persona programadas en el mes / capacidad disponible del mes. Las obras sin estimación o sin fecha de asignación no se incluyen todavía. La dirección se carga con el tiempo de colocación y no modifica la hoja proyecto. En modo conectado, equipos, colaboradores y asignaciones se guardan en Apps Script con control de versiones; en demo siguen siendo locales. Los kilómetros, traslados reales y fechas comprometidas se agregarán después.</p>
+    <h2>8. TP, backlog y personal auxiliar (v0.5)</h2><p>Cada TP es una tarea individual movible en el futuro. Lo que quedó programado en el pasado es solo lectura y no se supone ejecutado. Pueden crearse tareas extra y guardar saldos pendientes en backlog si llueve o se finaliza solo parcialmente. Tocá el día del Gantt para ver ocupación y personas de cada equipo. Los auxiliares de Producción se incorporan a Colocación únicamente en las fechas solicitadas. Las obras del grupo <b>Retiro en Abalum</b> quedan fuera de la planificación. En modo conectado, las TP y los auxiliares quedan guardados en Apps Script; los datos de demo siguen siendo locales.</p>
+    <h2>9. TP, cobertura y reprogramaciones (v0.6)</h2><p>Una TP requiere horas-persona y puede asignarse a un equipo, día y operarios específicos, incluidos auxiliares convocados. Al hacer doble clic o tocar el TP se abre un modal para editarla. Al cambiar de fecha o equipo es obligatorio registrar el motivo: cada movimiento genera un registro de reprogramación. Un arrastre no modifica los datos hasta confirmar el modal.</p><p><b>Cobertura del TP</b> = horas-persona que los operarios asignados pueden dedicar / horas-persona requeridas. Un operario no puede aportar más horas que su jornada ni duplicar sus horas en dos TP del mismo día. Las horas sin cubrir indican qué se debe reasignar o reprogramar; en fechas pasadas son planificación no confirmada, no evidencia de ejecución. <b>Ocupación del equipo</b> = horas-persona programadas / capacidad disponible, y puede superar el 100%. Se muestran ambos indicadores por día y por mes. Los equipos usan colores RGBA configurables en el modal de creación/edición.</p><p>En producción, las tareas, colores, personas y motivos quedan en el documento de capacidad versionado de Apps Script. La información de proyectos importada permanece de solo lectura.</p><h2>10. TP pendiente desprendida (v0.7)</h2><p>Si una TP de colocación tiene horas teóricas sin cobertura, desde su modal se pueden desprender esas horas como una nueva <b>TP pendiente</b>, indicando el motivo (falta de personal, condiciones de obra, clima, materiales, solicitud del cliente u otros). También se puede indicar manualmente qué cantidad desprender. La TP original conserva fecha, equipo y operarios, pero reduce sus horas-persona en esa misma cantidad; la nueva TP queda en backlog sin fecha ni personal asignado, vinculada por <code>parentId</code>. La suma de horas teóricas originales y pendientes no se modifica por esta operación.</p><p><b>Cobertura prevista no significa ejecución real.</b> Desprender una TP pendiente no confirma horas trabajadas, no altera tareas históricas ni cuenta como reprogramación. Las TP adicionales se crean por separado para actividades nuevas fuera de la estimación. En Tiempos de obra, al guardar una estimación el formulario queda bloqueado y el botón cambia a «Editar obra»; al editar se habilita «Guardar cambios» o cancelar.</p>
+    <h2>11. Ocupación mensual y asignación lineal (v0.8)</h2><p>Una obra con horas de colocación se asigna a un equipo dentro de un mes. La planificación automática busca el siguiente día con operarios y jornada disponible, y reserva una sola obra por equipo y día. Respeta ausencias, personal auxiliar convocado, feriados y recesos, y continúa al mes siguiente si hace falta. El botón Recalcular futuro reorganiza solo las asignaciones automáticas sin borrar fechas pasadas ni TP manuales. El Gantt anterior queda para casos de ejecución y backlog; horas programadas no equivalen a horas ejecutadas.</p><h2>12. Gantt por proyecto y vista cliente (v0.8)</h2><p>Es una cronología independiente por proyecto, con componentes, tareas, horas-persona, equipo responsable, fechas, estado y avance declarado. Sus fechas usan el mismo calendario laboral y personal disponible para sugerir la finalización. Su función es seguimiento: NO suma nuevamente esas horas a la capacidad mensual, que se reserva en el módulo de Ocupación. La Vista cliente es solo una previsualización de lectura dentro de la aplicación autenticada. No se publicó todavía un enlace público, pero los usuarios autenticados consultan el mismo Gantt cuando están conectados a Apps Script. Para habilitar clientes reales harán falta permisos por proyecto y un almacenamiento central seguro.</p><h2>13. Filtros compartidos y sábados puntuales (v0.9)</h2><p>Los diagramas de colocación, la ocupación para Gerencia y el seguimiento por proyecto tienen los mismos accesos: Ver desde hoy (hasta el cierre del mes), Ver desde inicio, Próximos 15 días, Próximos 30 días y Mes elegido. El porcentaje de ocupación se recalcula sumando exclusivamente las horas-persona programadas y disponibles en las fechas que se muestran; no se repite el porcentaje mensual cuando el tramo cruza un mes. La cantidad de TP y las reprogramaciones son indicadores globales históricos, mientras que la cobertura y la ocupación sí se filtran por período.</p><p>Al tocar un sábado futuro en el Gantt se puede habilitar excepcionalmente una jornada pura para un equipo concreto, con horas configurables entre 0,5 y 12. Esa fecha afecta capacidad, asignación lineal y cálculo de fin sugerido; no habilita otros sábados. Los feriados y recesos siguen teniendo prioridad. No se puede deshabilitar un sábado que tiene TP sin reprogramarlas antes. El Gantt por proyecto ya no separa las tareas en filas extra por componente: el componente es un dato opcional de cada tarea y la grilla permanece continua. Los sábados y las TP se guardan en Apps Script cuando se activa el modo conectado.</p><h2>14. Gantt completo y sincronización compartida (v1.1)</h2><p>«Obra completa» muestra el calendario desde la primera tarea/incidencia hasta la última fecha de actividad del proyecto, sin cortar por mes ni usar el Inicio del Excel. La planificación de equipos y el Gantt por proyecto se guardan en dos documentos versionados en Apps Script; un indicador muestra cuándo el guardado fue confirmado. Si otro usuario modificó la versión, descargá el borrador antes de recuperar la versión del servidor. El catálogo <b>proyecto</b> nunca se escribe desde estos documentos. Si se encuentran datos antiguos en el navegador y el servidor está vacío, su importación requiere una confirmación expresa.</p><h2>15. Buscador y kilómetros de ida (v1.2)</h2><p>El Gantt por proyecto permite buscar por número, nombre y cliente sin recorrer una lista desplegable. En Ocupación mensual → Logística · camiones, la dirección de salida es Avenida Siria 1633. La dirección de llegada se carga exclusivamente en Tiempos de obra. Apps Script consulta el kilometraje real de la ruta de conducción; el horario estimado del camión usa una velocidad media elegida (30, 50 o personalizada), la salida prevista y demoras adicionales. Esta estimación no incluye restricciones de camión, tráfico dinámico ni descarga; todavía no descuenta horas de la capacidad.</p></div><div className="help-side"><div className="panel"><div className="panel-heading"><h2>Ruta recomendada</h2></div><div className="steps"><div><b>01</b><span>Importar proyectos</span></div><div><b>02</b><span>Estimar tiempo por obra</span></div><div><b>03</b><span>Definir equipo y jornadas</span></div><div><b>04</b><span>Cargar feriados y recesos</span></div><div><b>05</b><span>Crear eventos y planificar</span></div></div><button className="btn primary full" onClick={()=>go('projects')}>Ir a proyectos <ArrowRight size={16}/></button></div><div className="panel"><div className="panel-heading"><h2>Archivos del proyecto</h2></div><p className="muted">README.md explica el uso. README_AI.md contiene las convenciones técnicas para próximas modificaciones.</p><Pill tone="blue">React + Vite + Apps Script</Pill></div></div></div>
   </>;}
 function App() {
+  const savedToken=!isDemo?(localStorage.getItem('obras-session-token')||''):'';
+  const [initialCache]=useState(()=>savedToken?readSyncCache():null);
   const [screen,setScreen]=useState('planning');const [menuOpen,setMenuOpen]=useState(false);
-  const [data,setData]=useState(()=>isDemo?readDemo():EMPTY);
-  const [token,setToken]=useState(()=>isDemo?'':localStorage.getItem('obras-session-token')||'');
-  const [actor,setActor]=useState(()=>isDemo?{username:'admin',name:'Administrador de demostración',role:'SUPERADMIN'}:null);
-  const [busy,setBusy]=useState(false);const [toast,setToast]=useState(null);const [selectedProject,setSelectedProject]=useState('');
+  const [data,setData]=useState(()=>isDemo?readDemo():initialCache?.data||EMPTY);
+  const [token,setToken]=useState(savedToken);
+  const [actor,setActor]=useState(()=>isDemo?{username:'admin',name:'Administrador de demostración',role:'SUPERADMIN'}:initialCache?.actor||(savedToken?readSessionActor():null));
+  const [sync,setSync]=useState(()=>({phase:isDemo?'demo':'loading',lastSuccess:initialCache?.savedAt||null,writing:0,error:''}));
+  const [toast,setToast]=useState(null);const [selectedProject,setSelectedProject]=useState('');
+  const tokenRef=useRef(savedToken);
+  const syncRunningRef=useRef(false);
+  const syncRequestedRef=useRef(false);
+  const writesRef=useRef(0);
+  const editVersionRef=useRef(0);
+  const lastSuccessRef=useRef(initialCache?.savedAt||0);
   const showToast=useCallback((message,type='success')=>setToast({message,type}),[]);
   useEffect(()=>{if(!toast)return;const t=setTimeout(()=>setToast(null),5500);return()=>clearTimeout(t);},[toast]);
   useEffect(()=>{const fn=e=>showToast(e.detail,'danger');window.addEventListener('obra-error',fn);return()=>window.removeEventListener('obra-error',fn);},[showToast]);
   useEffect(()=>{if(isDemo)saveDemo(data);},[data]);
-  const reload=useCallback(async(tok=token)=>{
-    if(isDemo)return;
-    setBusy(true);
-    try {const fresh=await request('bootstrap',tok);setData(fresh);setActor(fresh.actor);return true;}
-    catch(e){showToast(e.message,'danger');if(e.code==='AUTH_REQUIRED'){localStorage.removeItem('obras-session-token');setToken('');setActor(null);}return false;}
-    finally{setBusy(false);}
-  },[token,showToast]);
-  useEffect(()=>{if(!isDemo && token)reload(token);},[token,reload]);
-  const onLogin=useCallback(async(username,password)=>{const result=await request('auth.login',null,{username,password});localStorage.setItem('obras-session-token',result.token);setToken(result.token);setActor(result.actor);},[]);
-  const logOut=()=>{const old=token;localStorage.removeItem('obras-session-token');setToken('');setActor(null);setData(EMPTY);request('auth.logout',old).catch(()=>{});};
+  // El caché se actualiza solo tras una lectura o escritura confirmada por Apps Script.
+  const endSession=useCallback((forToken,message)=>{
+    if(tokenRef.current!==forToken)return;
+    tokenRef.current=''; editVersionRef.current++;
+    localStorage.removeItem('obras-session-token');clearSyncCache();clearSessionActor();
+    setToken('');setActor(null);setData(EMPTY);
+    setSync({phase:'loading',lastSuccess:null,writing:0,error:''});
+    if(message)showToast(message,'danger');
+  },[showToast]);
+  // Lectura remota sin overlay. Evita que una respuesta vieja pise ediciones recientes.
+  const reload=useCallback(async(tok=tokenRef.current)=>{
+    if(isDemo||!tok||tok!==tokenRef.current)return false;
+    if(syncRunningRef.current||writesRef.current>0){syncRequestedRef.current=true;return false;}
+    syncRunningRef.current=true;
+    const startVersion=editVersionRef.current;
+    setSync(s=>({...s,phase:'syncing',error:''}));
+    try {
+      const fresh=await request('bootstrap',tok);
+      if(tok!==tokenRef.current)return false;
+      if(writesRef.current>0||startVersion!==editVersionRef.current){syncRequestedRef.current=true;return false;}
+      setData(fresh);setActor(fresh.actor);writeSessionActor(fresh.actor);
+      const at=Date.now();lastSuccessRef.current=at;
+      writeSyncCache(fresh.actor,fresh,localStorage,at);
+      setSync(s=>({...s,phase:'ready',lastSuccess:at,error:''}));
+      return true;
+    } catch(e) {
+      if(tok!==tokenRef.current)return false;
+      if(e.code==='AUTH_REQUIRED'){endSession(tok,e.message);return false;}
+      // Conservamos lectura local; no afirmamos que datos desactualizados sean actuales.
+      setSync(s=>({...s,phase:'error',error:e.message||'No se pudo sincronizar.'}));
+      return false;
+    } finally {
+      syncRunningRef.current=false;
+      if(syncRequestedRef.current&&writesRef.current===0&&tokenRef.current){
+        syncRequestedRef.current=false;
+        // Una sesión nueva también puede iniciar su lectura cuando termina la antigua.
+        queueMicrotask(()=>{void reload(tokenRef.current);});
+      }
+    }
+  },[endSession]);
+  useEffect(()=>{
+    if(isDemo||!token)return;
+    tokenRef.current=token;
+    void reload(token);
+    const poll=()=>{
+      if(document.visibilityState==='visible' && Date.now()-lastSuccessRef.current>=5*60*1000)void reload(token);
+    };
+    const interval=setInterval(poll,60*1000);
+    const onVisible=()=>{if(document.visibilityState==='visible')poll();};
+    const onOnline=()=>{void reload(token);};
+    document.addEventListener('visibilitychange',onVisible);
+    window.addEventListener('online',onOnline);
+    return()=>{clearInterval(interval);document.removeEventListener('visibilitychange',onVisible);window.removeEventListener('online',onOnline);};
+  },[token,reload]);
+  const onLogin=useCallback(async(username,password)=>{
+    const result=await request('auth.login',null,{username,password});
+    clearSyncCache();
+    tokenRef.current=result.token;
+    localStorage.setItem('obras-session-token',result.token);writeSessionActor(result.actor);
+    setData(EMPTY);setActor(result.actor);setToken(result.token);
+    lastSuccessRef.current=0;
+    setSync({phase:'loading',lastSuccess:null,writing:0,error:''});
+  },[]);
+  const logOut=()=>{
+    // Evita perder cambios pendientes de una operación de guardado en segundo plano.
+    if((capacityWorkspace.dirty||projectWorkspace.dirty)&&!window.confirm('Hay cambios de planificación sin guardar. ¿Cerrar sesión de todos modos?'))return;
+    const old=tokenRef.current;
+    endSession(old);
+    request('auth.logout',old).catch(()=>{});
+  };
   const run=async(action,payload,localChange,success)=>{
     if(isDemo){
       if(action==='project.refresh' || action==='project.importSheet' || action==='project.uploadExcel' || action==='holiday.sync'){
@@ -230,23 +327,77 @@ function App() {
       if(localChange)setData(current=>localChange(current));
       showToast(success||'Cambio guardado en demo.');return true;
     }
-    setBusy(true);
-    try {await request(action,token,payload);const activeSession=await reload(token);if(activeSession===false)return false;showToast(success||'Guardado correctamente.');return true;}
-    catch(e){showToast(e.message,'danger');if(e.code==='AUTH_REQUIRED'){localStorage.removeItem('obras-session-token');setToken('');setActor(null);}return false;}
-    finally{setBusy(false);}
+    const opToken=tokenRef.current;
+    if(!opToken)return false;
+    editVersionRef.current++;writesRef.current++;
+    setSync(s=>({...s,writing:writesRef.current}));
+    try {
+      // El guardado espera la confirmación real del servidor, pero nunca tapa la pantalla.
+      await request(action,opToken,payload);
+      if(opToken!==tokenRef.current)return false;
+      if(localChange)setData(current=>{const next=localChange(current);if(actor)writeSyncCache(actor,next);return next;});
+      showToast(success||'Guardado correctamente.');
+      return true;
+    } catch(e) {
+      if(opToken!==tokenRef.current)return false;
+      if(e.code==='AUTH_REQUIRED')endSession(opToken,e.message);
+      else showToast(`No se guardó: ${e.message}`,'danger');
+      return false;
+    } finally {
+      writesRef.current=Math.max(0,writesRef.current-1);
+      if(opToken===tokenRef.current){
+        setSync(s=>({...s,writing:writesRef.current}));
+        if(writesRef.current===0)void reload(opToken);
+      }
+    }
   };
+  const routeLookup=useCallback(async projectId=>{
+    if(isDemo)throw Error('El cálculo real de kilómetros necesita el backend Apps Script. Activá VITE_DEMO_MODE=false.');
+    const currentToken=tokenRef.current;
+    if(!currentToken)throw Error('Sesión vencida: iniciá sesión para calcular la ruta.');
+    return request('logistics.route',currentToken,{projectId});
+  },[]);
+  const workspaceLoad=useCallback(async workspace=>{
+    const currentToken=tokenRef.current;
+    if(!currentToken)throw Error('Iniciá sesión para acceder a la planificación.');
+    const loaded=await request('workspace.load',currentToken,{workspace});
+    return loaded;
+  },[]);
+  const workspaceSave=useCallback(async (workspace,value,expectedRevision)=>{
+    const currentToken=tokenRef.current;
+    if(!currentToken)throw Error('Iniciá sesión antes de guardar.');
+    return request('workspace.save',currentToken,{workspace,value,expectedRevision});
+  },[]);
+  const workspaceApi=useMemo(()=>({load:workspaceLoad,save:workspaceSave}),[workspaceLoad,workspaceSave]);
+  const connected=!isDemo&&!!actor&&!!token;
+  const capacityWorkspace=useBackendWorkspace({workspace:'capacity',enabled:connected,demoMode:isDemo,autoRefresh:screen!=='planning',writable:canEdit(actor),api:workspaceApi,
+    initial:isDemo?demoCapacity:blankCapacity,localKey:CAPACITY_STORAGE,legacyReader:readLegacyCapacity});
+  const projectWorkspace=useBackendWorkspace({workspace:'projectGantt',enabled:connected,demoMode:isDemo,autoRefresh:screen!=='projectGantt',writable:canEdit(actor),api:workspaceApi,
+    initial:emptyProjectGantt,localKey:PROJECT_GANTT_STORAGE,legacyReader:readLegacyProjectGantt});
+  useEffect(()=>{
+    const blockExit=event=>{
+      if(connected&&(capacityWorkspace.dirty||projectWorkspace.dirty)){
+        event.preventDefault();event.returnValue='';
+      }
+    };
+    window.addEventListener('beforeunload',blockExit);
+    return()=>window.removeEventListener('beforeunload',blockExit);
+  },[connected,capacityWorkspace.dirty,projectWorkspace.dirty]);
   const go=target=>{setScreen(target);setMenuOpen(false);window.scrollTo({top:0,behavior:'smooth'});};
   const selectEstimate=p=>{setSelectedProject(p.id);go('times');};
   const [teamEdit,setTeamEdit]=useState('3');
   useEffect(()=>setTeamEdit(String(data.teamSize||3)),[data.teamSize]);
-  if(!isDemo && !actor)return <><Login onLogin={onLogin}/>{busy&&<div className="loading-overlay">Verificando acceso…</div>}{toast&&<div className={'toast '+toast.type}>{toast.message}</div>}</>;
+  if(!isDemo && !actor)return <><Login onLogin={onLogin}/>{sync.phase==='error'&&<div className="sync-login-warning" role="status">Sin conexión con Apps Script. Podés reintentar el inicio de sesión. <button onClick={()=>reload(token)}>Reintentar sesión</button></div>}{toast&&<div className={'toast '+toast.type}>{toast.message}</div>}</>;
   const visibleNav=NAV.filter(x=>x.id!=='users'||canAdmin(actor));
   const page={
     dashboard:<Dashboard data={data} go={go}/>,
     projects:<Projects data={data} actor={actor} run={run} go={go} onEstimate={selectEstimate}/>,
     times:<Times data={data} actor={actor} run={run} selection={selectedProject} onSelect={setSelectedProject}/>,
     calendar:<CalendarPage data={data} actor={actor} run={run}/>,
-    planning:<CapacityStudio data={data} go={go} run={run}/>,
+    planning:<WorkspaceGate state={capacityWorkspace} title="Ocupación mensual"><CapacityStudio data={data} go={go} run={run} editable={canEdit(actor)} store={capacityWorkspace.value} setStore={capacityWorkspace.setValue} routeLookup={routeLookup}/></WorkspaceGate>,
+    projectGantt:<WorkspaceGate state={projectWorkspace.ready?capacityWorkspace:projectWorkspace} title="Gantt por proyecto y equipos">
+      <WorkspaceGate state={projectWorkspace} title="Gantt por proyecto"><ProjectGantt data={data} go={go} editable={canEdit(actor)} doc={projectWorkspace.value} setDoc={projectWorkspace.setValue} capacityData={capacityWorkspace.value} setCapacityData={capacityWorkspace.setValue}/></WorkspaceGate>
+    </WorkspaceGate>,
     users:<Users data={data} actor={actor} run={run}/>,
     help:<Help go={go}/>
   };
@@ -256,9 +407,12 @@ function App() {
       <div className="sidebar-bottom"><div className="sidebar-box"><div className="sidebar-box-icon"><ShieldCheck size={19}/></div><strong>{isDemo?'Versión demostración':'Conexión protegida'}</strong><p>{isDemo?'Datos ficticios. No modifica Google Sheets.':'Información centralizada en Google Sheets.'}</p></div><div className="account"><div className="avatar">{(actor?.name||'A').charAt(0).toUpperCase()}</div><div className="account-info"><strong>{actor?.name||'Usuario'}</strong><small>{actor?.role||''}</small></div>{!isDemo&&<button className="logout" aria-label="Cerrar sesión" title="Cerrar sesión" onClick={logOut}><LogOut size={17}/></button>}</div></div>
     </aside>
     {menuOpen&&<button className="mobile-overlay" aria-label="Cerrar menú" onClick={()=>setMenuOpen(false)}/>}
-    <div className="main-layout"><header className="topbar"><div className="topbar-left"><button className="menu-toggle" aria-label="Abrir menú" onClick={()=>setMenuOpen(true)}><Menu size={22}/></button><span>Gestión de tiempo</span><ChevronRight size={14}/><b>{NAV.find(x=>x.id===screen)?.label}</b></div><div className="topbar-right">{isDemo&&<Pill tone="amber">Modo demo</Pill>}<span className="online"><span/> {isDemo?'Local':'Conectado'}</span><button className="btn tiny secondary" onClick={()=>go('planning')}><UsersRound size={15}/> Planificar equipos</button></div></header>
-    <main className="content" id="main-content">{page[screen]}</main><footer className="footer"><span>ABALUM · ObraTiempo v0.5 · UX de tareas</span><span>Gestión de tiempos y capacidad · <button onClick={()=>go('help')}>Documentación</button></span></footer></div>
-    {busy&&<div className="loading-overlay" role="status"><RefreshCw size={22} className="spin"/> Procesando…</div>}
+    <div className="main-layout"><header className="topbar"><div className="topbar-left"><button className="menu-toggle" aria-label="Abrir menú" onClick={()=>setMenuOpen(true)}><Menu size={22}/></button><span>Gestión de tiempo</span><ChevronRight size={14}/><b>{NAV.find(x=>x.id===screen)?.label}</b></div><div className="topbar-right">{isDemo&&<Pill tone="amber">Modo demo</Pill>}{isDemo?<span className="online"><span/> Local</span>:<div className={'sync-chip '+(sync.phase==='error'?'sync-error':sync.phase==='syncing'?'sync-running':'')} role="status" aria-live="polite" title={sync.phase==='error'?sync.error:sync.lastSuccess?`Última actualización: ${formatSyncTime(sync.lastSuccess)}`:'Sin datos verificados todavía'}>
+        {sync.phase==='syncing'?<RefreshCw size={13} className="spin"/>:sync.phase==='error'||sync.phase==='loading'?<Clock3 size={13}/>:<Check size={13}/>}
+        <span>{sync.writing>0?`Guardando ${sync.writing} cambio${sync.writing>1?'s':''}…`:sync.phase==='syncing'?'Sincronizando…':sync.phase==='error'?'Sin conexión · datos guardados':sync.phase==='ready'?'Actualizado':'Últimos datos disponibles'}</span>
+        <button type="button" title="Actualizar datos de Apps Script" aria-label="Actualizar datos" disabled={sync.phase==='syncing'||sync.writing>0} onClick={()=>void reload(token)}><RefreshCw size={14}/></button>
+      </div>}<button className="btn tiny secondary" onClick={()=>go('planning')}><UsersRound size={15}/> Planificar equipos</button></div></header>
+    <main className="content" id="main-content">{page[screen]}</main><footer className="footer"><span>ABALUM · ObraTiempo v1.1 · Persistencia en Apps Script</span><span>Gestión de tiempos y capacidad · <button onClick={()=>go('help')}>Documentación</button></span></footer></div>
     {toast&&<div role="alert" className={'toast '+toast.type}><span>{toast.message}</span><button onClick={()=>setToast(null)} aria-label="Cerrar aviso"><X size={16}/></button></div>}
   </div>;
 }
